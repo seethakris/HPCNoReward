@@ -1,0 +1,25 @@
+# Don't track content of these files
+
+# Folder view configuration files
+.DS_Store
+Desktop.ini
+
+# Thumbnail cache files
+._*
+Thumbs.db
+
+# Files that might appear on external disks
+.Spotlight-V100
+.Trashes
+
+# Compiled Python files
+*.pyc
+*.ipynb_checkpoints
+
+#.idea folders
+.idea/
+
+#Folders that are demo
+ImagingScripts/PilotCFCImaging_DG4.ipynb
+ImagingScripts/PilotCFCImaging_DG6.ipnyb
+ImagingScripts/PilotCFCImaging_NR18.ipynb
