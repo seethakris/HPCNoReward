@@ -200,7 +200,8 @@ class GetData(object):
                                               thislap_start + reward_frame - number_of_sec_forlicks:thislap_start + reward_frame + number_of_sec_forlicks]
                 else:
                     laprun = np.squeeze(self.running_data[taskname][thislap_start:nextlap_start])
-                    laprun_samelap = np.squeeze(self.running_data[taskname][thislap_start:thislap_end])
+                    laprun_samelap = np.squeeze(self.running_data[taskname][thislap_start:thislap_end-30])
+                    plt.plot(laprun_samelap)
                     alllaprun = np.squeeze(self.running_data[taskname][thislap_start:nextlap_start])
                     prelicks = self.lick_data[taskname][thislap_start:nextlap_start]
                     alllicks = self.lick_data[taskname][thislap_start:nextlap_start]
@@ -350,10 +351,12 @@ class GetData(object):
         fs.savefig(os.path.join(self.FigureFolder, 'Good_and_Bad_Velocity.pdf'), bbox_inches='tight')
 
     def plot_velocity_withspaceandtime(self):
-        fs, axes = plt.subplots(1, len(self.TaskDict), figsize=(15, 3), sharex='row', sharey='row', dpi=100)
-
+        if len(self.TaskDict) == 2:
+            fs, axes = plt.subplots(1, len(self.TaskDict), figsize=(8, 3), sharex='row', sharey='row', dpi=100)
+        else:
+            fs, axes = plt.subplots(1, len(self.TaskDict), figsize=(15, 3), sharex='row', sharey='row', dpi=100)
         for n, t in enumerate(self.TaskDict.keys()):
-            v1 = self.velocity_perlap_inspace[t][:, 2:38]  # Cut of bins to remove teleporatation time
+            v1 = self.velocity_perlap_inspace[t]  # Cut of bins to remove teleporatation time
             axes[n].plot(v1.T, color='gray', alpha=0.5)
             axes[n].plot(np.arange(np.size(v1, 1)),
                          np.mean(v1, axis=0), 'k', linewidth=2)
@@ -375,7 +378,6 @@ class GetData(object):
         fs.tight_layout()
 
     def plot_lick_per_lap(self):
-
         fs, axes = plt.subplots(2, len(self.TaskDict), figsize=(15, 6), sharex='all', sharey='all', dpi=200)
         for n, i in enumerate(self.TaskDict.keys()):
             axes[0, n].plot(self.numlicks_withinreward[i], linewidth=2, marker='.', markersize=10)

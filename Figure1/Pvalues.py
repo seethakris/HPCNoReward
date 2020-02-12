@@ -2,16 +2,18 @@ from statsmodels.stats.multicomp import (pairwise_tukeyhsd, MultiComparison)
 import scipy.stats
 import numpy as np
 
+
 class GetPValues:
     def get_shuffle_pvalue(self, accuracy_dataframe, taskstocompare):
         # Get two p-values. One with outlier and one without
         accuracy_dataframe = accuracy_dataframe[taskstocompare]
-        outlier_rem_df = self.remove_outlier(accuracy_dataframe, taskstocompare)
-
-        print('\033[1mMultiple comparisons after removing Outliers\033[0m')
-        test = self.get_normality(outlier_rem_df)
-        self.get_multiplecomparisons(outlier_rem_df, test)
-        print('\n\n\n')
+        outlier_rem_df, numoutliers = self.remove_outlier(accuracy_dataframe, taskstocompare)
+        print(np.size(numoutliers))
+        if np.size(numoutliers) > 0:
+            print('\033[1mMultiple comparisons after removing Outliers\033[0m')
+            test = self.get_normality(outlier_rem_df)
+            self.get_multiplecomparisons(outlier_rem_df, test)
+            print('\n\n\n')
         print('\033[1mMultiple comparisons without removing outliers\033[0m')
         test = self.get_normality(accuracy_dataframe)
         self.get_multiplecomparisons(accuracy_dataframe, test)
@@ -61,4 +63,4 @@ class GetPValues:
         nooutlier_df = dataframe.drop(index_outlier)
         nooutlier_df = nooutlier_df.dropna(how='all')
 
-        return nooutlier_df
+        return nooutlier_df, index_outlier

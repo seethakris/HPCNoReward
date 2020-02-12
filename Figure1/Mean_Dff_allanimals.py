@@ -279,7 +279,7 @@ class GetData(object):
         return PlaceCells
 
     def get_lapframes(self, animalname, animalinfo):
-        TaskDict = animal_tasks = animalinfo['task_dict']
+        TaskDict = animalinfo['task_dict']
         PlaceFieldFolder = \
             [f for f in os.listdir(os.path.join(self.Foldername, animalname, 'Behavior')) if
              (f.endswith('.mat') and 'PlaceFields' in f and 'GoodBehavior' in f and 'Lick' not in f)]

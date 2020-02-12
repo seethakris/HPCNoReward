@@ -20,9 +20,9 @@ sys.path.append(PlottingFormat_Folder)
 import plottingfunctions as pf
 
 
-def compiled_decoding_accuracy_by_cells(DataFolder, taskdict, datatype, ax_numcell, legendflag=0):
-    cmd = CompileModelData(DataFolder, taskdict, datatype)
-    cmd.compile_numcells(ax_numcell, legendflag)
+def compiled_decoding_accuracy_by_cells(DataFolder, taskstoplot, datatype, ax_numcell, legendflag=0):
+    cmd = CompileModelData(DataFolder, taskstoplot, datatype)
+    cmd.compile_numcells(ax_numcell, taskstoplot, legendflag)
 
 
 def compile_confusion_matrix_bytask(DataFolder, taskdict, fighandle, ax_cm, datatype):
@@ -40,8 +40,6 @@ def compile_error_bytrack(DataFolder, taskdict, ax_er, datatype):
     cmd.compile_meanerror_bytrack(ax_er)
 
 
-# def compiled_accuracy_with_lapnumber():
-
 class CompileModelData(object):
     def __init__(self, DataFolder, taskdict, datatype):
         self.DataFolder = DataFolder
@@ -50,13 +48,14 @@ class CompileModelData(object):
         self.trackbins = 5
         self.taskdict = taskdict
 
-    def compile_numcells(self, ax, legendflag=0):
+    def compile_numcells(self, ax, taskstoplot, legendflag=0):
         percsamples = [1, 5, 10, 20, 50, 80, 100]
         percsamples = [f'%d%%' % p for p in percsamples]
-        animals = [f for f in os.listdir(self.DataFolder) if f not in 'BayesResults_All']
+        animals = [f for f in os.listdir(self.DataFolder) if
+                   f not in ['LickData', 'BayesResults_All', 'SaveAnalysed']]
         numcells_combined = pd.DataFrame([])
         for a in animals:
-            # print(a)
+            print(a)
             animalinfo = DataDetails.ExpAnimalDetails(a)
             if self.datatype == 'endzonerem':
                 bayesmodel = np.load(
@@ -73,7 +72,8 @@ class CompileModelData(object):
                 numcells_combined = pd.concat((numcells_combined, numcells_dataframe), ignore_index=True)
         g = numcells_combined.groupby(['SampleSize', 'Task', 'animalname']).agg([np.mean]).reset_index()
         g.columns = g.columns.droplevel(1)
-        sns.pointplot(x='SampleSize', y='R2_angle', data=g, order=percsamples, hue='Task', ax=ax)
+        sns.pointplot(x='SampleSize', y='R2_angle', data=g[g.Task.isin(taskstoplot)], order=percsamples, hue='Task',
+                      ax=ax)
         if legendflag:
             ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         else:
@@ -83,7 +83,7 @@ class CompileModelData(object):
         # ax.set_aspect(aspect=1.6)
         pf.set_axes_style(ax, numticks=4)
 
-        for t in self.taskdict.keys():
+        for t in self.taskdict:
             if t != 'Task1':
                 d, p = Stats.significance_test(g[g.Task == t]['R2'], g[g.Task == 'Task1']['R2'], type_of_test='KStest')
                 print(f'%s: KStest : p-value %0.4f' % (t, p))

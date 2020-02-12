@@ -8,6 +8,8 @@ import sys
 from collections import OrderedDict
 from statsmodels.stats.multicomp import (pairwise_tukeyhsd, MultiComparison)
 from statsmodels.stats.diagnostic import lilliefors
+from scipy.optimize import curve_fit
+
 import csv
 
 sns.set_context('paper', font_scale=1.3)
@@ -36,19 +38,24 @@ class BayesError(object):
             self.colors = [colors[0], colors[1], colors[3], colors[2]]
             self.task2_colors = [self.colors[1], self.colors[2]]
 
+        self.tracklength = 200
+        self.trackbins = 5
         self.BayesFolder = BayesFolder
         self.ParentDataFolder = ParentDataFolder
         self.CFC12flag = CFC12flag
         self.LickFolder = LickFolder
         self.load_lick_data()
+        self.velocity_slope = self.get_velocity_in_space()
         self.accuracy_dict, self.numlaps_dict = self.get_lapwiseerror_peranimal()
+        self.accuracy_dict_incm = self.get_lapwiseerror_incm()
 
     def load_lick_data(self):
         self.lickstop_df = pd.read_csv(os.path.join(self.LickFolder, 'Lickstops.csv'), index_col=0)
         self.lickstopcorrected_df = pd.read_csv(os.path.join(self.LickFolder, 'NormalizedLickstops.csv'), index_col=0)
 
     def load_lick_around_reward(self, taskstoplot):
-        files = [f for f in os.listdir(self.ParentDataFolder) if 'Bayes' not in f and 'Lick' not in f]
+        files = [f for f in os.listdir(self.ParentDataFolder) if
+                 f not in ['LickData', 'BayesResults_All', 'SaveAnalysed']]
         print(files)
         self.lick_data_dict = {keys: [] for keys in taskstoplot}
         for i in files:
@@ -73,7 +80,6 @@ class BayesError(object):
             if animalname == 'CFC12' and self.CFC12flag == 0:
                 continue
             animal_tasks = DataDetails.ExpAnimalDetails(animalname)['task_dict']
-            trackbins = DataDetails.ExpAnimalDetails(animalname)['trackbins']
             data = np.load(os.path.join(self.BayesFolder, f), allow_pickle=True)
             animal_accuracy = {k: [] for k in animal_tasks}
             animal_numlaps = {k: [] for k in animal_tasks}
@@ -89,6 +95,31 @@ class BayesError(object):
 
         return accuracy_dict, numlaps_dict
 
+    def get_velocity_in_space(self):
+        velocity_file = np.load(os.path.join(self.ParentDataFolder, 'SaveAnalysed', 'velocity_in_space.npz'),
+                                allow_pickle=True)
+        velocity_slope = velocity_file['speed_ratio'].item()
+        return velocity_slope
+
+    def get_lapwiseerror_incm(self):
+        files = [f for f in os.listdir(self.BayesFolder)]
+        accuracy_dict = OrderedDict()
+        for f in files:
+            print(f)
+            animalname = f[:f.find('_')]
+            if animalname == 'CFC12' and self.CFC12flag == 0:
+                continue
+            animal_tasks = DataDetails.ExpAnimalDetails(animalname)['task_dict']
+            data = np.load(os.path.join(self.BayesFolder, f), allow_pickle=True)
+            animal_accuracy = {k: [] for k in animal_tasks}
+            for t in animal_tasks:
+                animal_accuracy[t] = self.calulate_lapwiseerror_incm(y_actual=data['fit'].item()[t]['ytest'],
+                                                                     y_predicted=data['fit'].item()[t]['yang_pred'],
+                                                                     numlaps=data['numlaps'].item()[t],
+                                                                     lapframes=data['lapframes'].item()[t])
+            accuracy_dict[animalname] = animal_accuracy
+        return accuracy_dict
+
     def calulate_lapwiseerror(self, y_actual, y_predicted, numlaps, lapframes):
         lap_R2 = []
         for l in np.arange(numlaps - 1):
@@ -97,6 +128,16 @@ class BayesError(object):
 
         return np.asarray(lap_R2)
 
+    def calulate_lapwiseerror_incm(self, y_actual, y_predicted, numlaps, lapframes):
+        lap_error_incm = []
+        for l in np.arange(numlaps):
+            laps = np.where(lapframes == l + 1)[0]
+            y_error = self.get_cm_error(y_actual[laps], y_predicted[laps])
+            if ~np.all(np.isnan(y_error)):
+                lap_error_incm.append(y_error)
+
+        return np.asarray(lap_error_incm)
+
     @staticmethod
     def get_R2(y_actual, y_predicted):
         y_mean = np.mean(y_actual)
@@ -104,6 +145,17 @@ class BayesError(object):
         if np.isinf(R2):
             R2 = 0
         return R2
+
+    def get_cm_error(self, y_actual, y_predicted):
+        numbins = int(self.tracklength / self.trackbins)
+        y_diff = (np.abs(np.nan_to_num(y_actual) - np.nan_to_num(y_predicted))) * self.trackbins
+        # Bin error by track
+        y_diff_by_track = np.zeros(np.max(numbins))
+        for i in np.arange(numbins):
+            y_indices = np.where(y_actual == i)[0]
+            y_diff_by_track[i] = np.nanmean(y_diff[y_indices])
+
+        return y_diff_by_track
 
 
 class GetErrordata(BayesError):
@@ -262,8 +314,77 @@ class GetErrordata(BayesError):
                                                     norm_lick['Task2'])
         return bayeserror_withslidingwindow, numlicks_withslidingwindow
 
+    def get_bayeserror_with_slidingwindow_withvelocity(self, taskstoplot, totalnumlaps=15, windowsize=2):
+        bayeserror_withslidingwindow = {k: np.zeros((len(self.accuracy_dict), totalnumlaps - windowsize)) for k in
+                                        taskstoplot}
+        numlicks_withslidingwindow = {k: np.zeros((len(self.accuracy_dict), totalnumlaps - windowsize)) for k in
+                                      taskstoplot}
+        slope_withslidingwindow = {k: np.zeros((len(self.accuracy_dict), totalnumlaps - windowsize)) for k in
+                                   taskstoplot}
+        for n1, animal in enumerate(self.accuracy_dict):
+
+            anylicks = np.load(os.path.join(self.ParentDataFolder, animal, 'SaveAnalysed', 'behavior_data.npz'),
+                               allow_pickle=True)['numlicks_withinreward_alllicks'].item()
+            norm_licks = np.sum(anylicks['Task1'])
+            for n2, t in enumerate(self.accuracy_dict[animal]):
+                if t in taskstoplot:
+
+                    decodererror = self.accuracy_dict[animal][t]
+                    decodererror = decodererror[~np.isnan(decodererror)]
+                    velocity_slope = np.asarray(self.velocity_slope[animal][t])
+                    print(animal, np.shape(decodererror))
+                    for i in np.arange(0, totalnumlaps - windowsize):
+                        numlicks_withslidingwindow[t][n1, i] = np.sum(anylicks[t][i:i + windowsize])
+                        slope_withslidingwindow[t][n1, i] = np.nanmean(velocity_slope[i:i + windowsize])
+                        bayeserror_withslidingwindow[t][n1, i] = np.nanmedian(decodererror[i:i + windowsize])
+
+        return bayeserror_withslidingwindow, numlicks_withslidingwindow, slope_withslidingwindow
+
+    def get_bayes_error_withtracklength(self, ax, taskstoplot, lickthreshold=2):
+        bayeserror_withtrack = {k: [] for k in taskstoplot}
+        for n1, animal in enumerate(self.accuracy_dict_incm):
+            anylicks = np.load(os.path.join(self.ParentDataFolder, animal, 'SaveAnalysed', 'behavior_data.npz'),
+                               allow_pickle=True)['numlicks_withinreward_alllicks'].item()['Task2']
+            laps_with_nolicks = np.where(anylicks <= lickthreshold)[0]
+            # print(animal, laps_with_nolicks)
+            for n2, t in enumerate(self.accuracy_dict_incm[animal]):
+                if t in taskstoplot:
+                    decodererror = self.accuracy_dict_incm[animal][t]
+                    tasklap = np.size(decodererror, 0)
+                    laps_with_nolicks = laps_with_nolicks[laps_with_nolicks < tasklap]
+                    if t == 'Task2':
+                        bayeserror_withtrack[t].append(np.mean(decodererror[laps_with_nolicks, :], 0))
+                    elif t == 'Task1':
+                        bayeserror_withtrack[t].append(np.nanmean(decodererror[-5:, :], 0))
+
+                    else:
+                        bayeserror_withtrack[t].append(np.mean(decodererror, 0))
+        for t in taskstoplot:
+            bayeserror_withtrack[t] = np.asarray(bayeserror_withtrack[t])
+        self.ple.plot_errorwith_tracklength(ax, self.colors, bayeserror_withtrack, taskstoplot)
+        return bayeserror_withtrack
+
 
 class PlotErrorData:
+    @staticmethod
+    def plot_errorwith_tracklength(ax, colors, accuracy_dataframe, taskstoplot):
+        for n, t in enumerate(taskstoplot):
+            m = np.nanmean(accuracy_dataframe[t], 0)
+            sem = scipy.stats.sem(accuracy_dataframe[t], 0, nan_policy='omit')
+            ax.plot(m, color=colors[n], label=t)
+            ax.fill_between(np.arange(np.size(m)), m - sem, m + sem, color=colors[n], alpha=0.5)
+            # print(np.shape(accuracy_dataframe[t]))
+        pf.set_axes_style(ax)
+        ax.set_xlabel('Track Length (cm)')
+        ax.set_ylabel('Accuracy (cm)')
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+        # #Calculate p-value
+        for n in np.arange(np.size(accuracy_dataframe['Task1'], 1)):
+            t, p = scipy.stats.mannwhitneyu(accuracy_dataframe['Task1'][:, n], accuracy_dataframe['Task2'][:, n])
+            if p < 0.05:
+                ax.plot(n, 35, 'k*')
+
     @staticmethod
     def plot_accuracy_boxplot(ax, colors, accuracy_dataframe, taskstoplot, removenan):
         if removenan:
@@ -319,19 +440,57 @@ class PlotErrorData:
         axis[0].set_title(f'P-value : %f' % p)
 
     @staticmethod
-    def plot_lick_withtime(axis, numlicks, axislabel, axislim=(0, 1), color='k'):
-        num = (numlicks - np.min(numlicks, 1)[:, np.newaxis])
-        denom = (np.max(numlicks, 1) - np.min(numlicks, 1))[:, np.newaxis]
-        numlicks = numlicks / np.max(numlicks, 1)[:, np.newaxis]
-        mean_licks = np.mean(numlicks, 0)
-        sem_licks = scipy.stats.sem(numlicks, 0)
-        axis.plot(mean_licks, '.-', color=color)
-        axis.fill_between(np.arange(np.size(mean_licks)), mean_licks - sem_licks, mean_licks + sem_licks,
+    def plot_lick_withtime(axis, numlicks, axislabel, axislim=(0, 1), color='k', errorbar=0, dashed=1):
+        # num = (numlicks - np.min(numlicks, 1)[:, np.newaxis])
+        # denom = (np.max(numlicks, 1) - np.min(numlicks, 1))[:, np.newaxis]
+        numlicks = numlicks / np.nanmax(numlicks, 1)[:, np.newaxis]
+        mean_licks = np.nanmean(numlicks, 0)
+        sem_licks = scipy.stats.sem(numlicks, 0, nan_policy='omit')
+        if dashed:
+            axis.plot(mean_licks, 'o-', color=color, markerfacecolor='none')
+        else:
+            axis.plot(mean_licks, 'o', color=color, markerfacecolor='none')
+        if errorbar:
+            axis.errorbar(np.arange(np.size(mean_licks)), mean_licks, yerr=sem_licks, ls='none',
                           color='lightgrey')
+        else:
+            axis.fill_between(np.arange(np.size(mean_licks)), mean_licks - sem_licks, mean_licks + sem_licks,
+                              color='lightgrey')
         axis.set_ylabel(axislabel)
         axis.set_xlabel('Laps in time')
         axis.set_ylim(axislim)
         pf.set_axes_style(axis, numticks=4)
+
+    @staticmethod
+    def fit_error_with_sigmoid(axis, data):
+        normdata = data / np.nanmax(data, 1)[:, np.newaxis]
+        mean_data = np.nanmean(normdata, 0)
+
+        ydata = mean_data
+        xdata = np.arange(np.size(mean_data))
+        # axis.plot(xdata, ydata, 'o', label='data')
+
+        popt, pcov = curve_fit(PlotErrorData.sigmoid, xdata, ydata)
+        y = PlotErrorData.sigmoid(xdata, *popt)
+        axis.plot(xdata, y, label='fit')
+
+        yfirst = np.gradient(y, edge_order=2)
+        idx = np.where(np.diff(yfirst) > 0)[0][0]
+        print('Critical Point %d' % idx)
+
+        print('R-squared %0.2f' % GetErrordata.get_R2(ydata, y))
+
+        # axis.axvline(idx)
+
+    @staticmethod
+    def sigmoid(x, a, b, c, d):
+        """ General sigmoid function
+        a adjusts amplitude
+        b adjusts y offset
+        c adjusts x offset
+        d adjusts slope """
+        y = ((a - b) / (1 + np.exp(x - (c / 2)) ** d)) + b
+        return y
 
     @staticmethod
     def plotlickdataaroundreward(axis, taskstoplot, lick_data, colors, frames_per_sec):
