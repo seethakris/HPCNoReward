@@ -55,4 +55,5 @@ def set_axes_style(axes, **kwargs):
 
     axes.tick_params(axis='both', pad=5, length=0)
     # Remove axis spines
-    sns.despine(right=True, bottom=True, left=True)
+
+    sns.despine(right=True, top=True, bottom=False, left=False)

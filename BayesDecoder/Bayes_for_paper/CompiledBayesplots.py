@@ -43,6 +43,8 @@ def compile_error_bytrack(DataFolder, taskdict, ax_er, datatype):
 class CompileModelData(object):
     def __init__(self, DataFolder, taskdict, datatype):
         self.DataFolder = DataFolder
+        self.animals = [f for f in os.listdir(self.DataFolder) if
+                        f not in ['LickData', 'BayesResults_All', 'SaveAnalysed']]
         self.datatype = datatype
         self.tracklength = 200
         self.trackbins = 5
@@ -51,10 +53,8 @@ class CompileModelData(object):
     def compile_numcells(self, ax, taskstoplot, legendflag=0):
         percsamples = [1, 5, 10, 20, 50, 80, 100]
         percsamples = [f'%d%%' % p for p in percsamples]
-        animals = [f for f in os.listdir(self.DataFolder) if
-                   f not in ['LickData', 'BayesResults_All', 'SaveAnalysed']]
         numcells_combined = pd.DataFrame([])
-        for a in animals:
+        for a in self.animals:
             print(a)
             animalinfo = DataDetails.ExpAnimalDetails(a)
             if self.datatype == 'endzonerem':
@@ -89,10 +89,9 @@ class CompileModelData(object):
                 print(f'%s: KStest : p-value %0.4f' % (t, p))
 
     def compile_confusion_matrix(self, fs, ax):
-        animals = [f for f in os.listdir(self.DataFolder) if f not in 'BayesResults_All']
         cm_all = {k: np.zeros((int(self.tracklength / self.trackbins), int(self.tracklength / self.trackbins))) for k in
                   self.taskdict.keys()}
-        for a in animals:
+        for a in self.animals:
             animalinfo = DataDetails.ExpAnimalDetails(a)
             if self.datatype == 'endzonerem':
                 bayesmodel = np.load(
@@ -120,9 +119,8 @@ class CompileModelData(object):
         ax[0].set_xlabel('Predicted')
 
     def compile_mean_bderror(self, ax):
-        animals = [f for f in os.listdir(self.DataFolder) if f not in 'BayesResults_All']
         mean_error = {k: [] for k in ['R2', 'Task', 'animalname', 'BD error (cm)', 'BD accuracy']}
-        for a in animals:
+        for a in self.animals:
             animalinfo = DataDetails.ExpAnimalDetails(a)
             if self.datatype == 'endzonerem':
                 bayesmodel = np.load(
@@ -154,14 +152,13 @@ class CompileModelData(object):
             pf.set_axes_style(ax[n], numticks=4)
 
     def compile_meanerror_bytrack(self, ax):
-        animals = [f for f in os.listdir(self.DataFolder) if f not in 'BayesResults_All']
         numbins = int(self.tracklength / self.trackbins)
-        numanimals = np.size(animals)
+        numanimals = np.size(self.animals)
         kfold = 10
         Y_diff_by_track = {k: np.zeros((numanimals, kfold, numbins)) for k in ['Task1', 'Task2']}
         Y_diff_by_track_mean = {k: [] for k in ['Task1', 'Task2']}
 
-        for n, a in enumerate(animals):
+        for n, a in enumerate(self.animals):
             print(a)
             animalinfo = DataDetails.ExpAnimalDetails(a)
             if self.datatype == 'endzonerem':

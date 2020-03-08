@@ -160,6 +160,7 @@ class PlotRaster(object):
 
         for t in self.taskstoplot:
             index = self.good_running_index[t]
+            print(self.taskstoplot)
             # print(np.shape(index))
             if remove_laps[t] > 0:
                 remove_index = np.where(self.good_lapframes[t] != remove_laps[t] + 1)[0]
@@ -284,36 +285,41 @@ class PlotRaster(object):
     def consecutive_one(self, data):
         return [self.len_iter(run) for val, run in groupby(data) if val]
 
-    def crop_Sm_and_sort(self, cells_to_use, cdata):
-        self.crpdSm = np.array([])
-        cdata_crpd = np.array([])
+    def crop_Sm_and_sort(self, cells_to_use, compileflag=1, **kwargs):
+        crpdSm = np.array([])
         for c in cells_to_use:
-            cdata_crpd = np.vstack((cdata_crpd, cdata[c[0]:c[1], :])) if cdata_crpd.size else cdata[c[0]:c[1], :]
-            self.crpdSm = np.vstack((self.crpdSm, self.Sm[c[0]:c[1], :])) if self.crpdSm.size else self.Sm[c[0]:c[1], :]
+            if compileflag:
+                crpdSm = np.vstack((crpdSm, kwargs['Sm'][c[0]:c[1], :])) if crpdSm.size else kwargs['Sm'][c[0]:c[1], :]
+            else:
+                crpdSm = np.vstack((crpdSm, self.Sm[c[0]:c[1], :])) if crpdSm.size else self.Sm[c[0]:c[1], :]
+        return crpdSm
 
-    def plot_rastermap(self, fighandle, ax, fdata, ylim=0, crop_cellflag=0, ylim_meandff=0.6):
+    def plot_rastermap(self, fighandle, ax, fdata, ylim=0, crop_cellflag=0, ylim_meandff=0.6, **kwargs):
         if ylim == 0 and crop_cellflag == 0:
             ylim = np.size(fdata, 0)
         elif ylim == 0 and crop_cellflag == 1:
-            ylim = np.size(self.crpdSm, 0)
+            ylim = np.size(kwargs['crpdSm'], 0)
+
+        if 'taskstoplot' not in kwargs.keys():
+            taskstoplot = self.taskstoplot
+        else:
+            taskstoplot = kwargs['taskstoplot']
 
         if crop_cellflag:
-            im = ax[0].imshow(self.crpdSm, vmin=0, vmax=0.3, cmap='plasma', aspect='auto', interpolation='hanning',
-                              extent=[0, self.crpdSm.shape[1] / self.framespersec, 0, self.crpdSm.shape[0]])
+            im = ax[0].imshow(kwargs['crpdSm'], vmin=0, vmax=0.3, cmap='plasma', aspect='auto', interpolation='hanning',
+                              extent=[0, kwargs['crpdSm'].shape[1] / self.framespersec, 0, kwargs['crpdSm'].shape[0]])
             CommonFunctions.plot_colorbar(fighandle, ax[0], im, title=f'\u0394F/F', ticks=[0, 0.3])
+            ax[0].set_xlim((0, kwargs['crpdSm'].shape[1] / self.framespersec))
         else:
-            ax[0].imshow(self.Sm, vmin=0, vmax=0.5, cmap='plasma', aspect='auto',
+            ax[0].imshow(self.Sm, vmin=0, vmax=0.5, cmap='plasma', aspect='auto', interpolation='hanning',
                          extent=[0, self.Sm.shape[1] / self.framespersec, 0, self.Sm.shape[0]])
+            ax[0].set_xlim((0, self.Sm.shape[1] / self.framespersec))
         ax[0].set_ylim((0, ylim))
-        ax[0].set_xlim((0, self.Sm.shape[1] / self.framespersec))
         ax[0].set_ylabel('Cell Number')
 
-        # Plot average across population
-        # x = np.linspace(0, np.size(fdata, 1) / self.framespersec, np.size(fdata, 1))
-        # ax[1].plot(x, savgol_filter(np.nanmean(fdata, 0), 101, 2), color='k', linewidth=0.5)
         count = 0
         count_dff = 0
-        for n, i in enumerate(self.taskstoplot):
+        for n, i in enumerate(taskstoplot):
             x = np.linspace(count, count + np.size(self.good_running_data[i]) / self.framespersec,
                             np.size(self.good_running_data[i]))
             ax[0].axvline(x[-1], color='k', linewidth=0.5)
@@ -334,6 +340,40 @@ class PlotRaster(object):
 
         ax[2].set_yticklabels([])
         ax[1].set_ylim((0, ylim_meandff))
+
+        pf.set_axes_style(ax[0], numticks=4)
+        pf.set_axes_style(ax[1], numticks=1)
+
+    def compiled_rastermap(self, fighandle, ax, taskstoplot, compiled_fdata, compiled_Smdata, compiled_runningdata,
+                           compiled_lickdata):
+        im = ax[0].imshow(compiled_Smdata, vmin=0, vmax=0.3, cmap='plasma', aspect='auto', interpolation='hanning',
+                          extent=[0, compiled_Smdata.shape[1] / self.framespersec, 0, compiled_Smdata.shape[0]])
+        CommonFunctions.plot_colorbar(fighandle, ax[0], im, title=f'\u0394F/F', ticks=[0, 0.3])
+        ax[0].set_xlim((0, compiled_Smdata.shape[1] / self.framespersec))
+
+        count = 0
+        count_dff = 0
+        for n, i in enumerate(taskstoplot):
+            x = np.linspace(count, count + np.size(compiled_runningdata[i]) / self.framespersec,
+                            np.size(compiled_runningdata[i]))
+            ax[0].axvline(x[-1], color='k', linewidth=0.5)
+            if i == 'Task2':
+                ax[2].plot(x[:self.lickstopframe], compiled_runningdata[i][:self.lickstopframe],
+                           color=self.task2_colors[0], linewidth=0.5)
+                ax[2].plot(x[self.lickstopframe:], compiled_runningdata[i][self.lickstopframe:],
+                           color=self.task2_colors[1], linewidth=0.5)
+            else:
+                ax[2].plot(x, compiled_runningdata[i], color=self.colors[n], linewidth=0.5)
+            ax[2].plot(x, compiled_lickdata[i] * 0.75, '|', color='grey', markeredgewidth=0.05, markersize=5,
+                       alpha=0.5)
+            ax[1].plot(x, savgol_filter(
+                np.nanmean(compiled_fdata[:, count_dff:count_dff + np.size(compiled_runningdata[i])], 0), 31, 2),
+                       color=self.colors[n], linewidth=0.5)
+            count += np.size(compiled_runningdata[i]) / self.framespersec
+            count_dff += np.size(compiled_runningdata[i])
+
+        ax[2].set_yticklabels([])
+        ax[1].set_ylim((0, 0.15))
 
         pf.set_axes_style(ax[0], numticks=4)
         pf.set_axes_style(ax[1], numticks=1)

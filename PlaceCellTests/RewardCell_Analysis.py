@@ -16,13 +16,19 @@ PlottingFormat_Folder = '/home/sheffieldlab/Desktop/NoReward/Scripts/PlottingToo
 sys.path.append(PlottingFormat_Folder)
 import plottingfunctions as pf
 
+DataDetailsFolder = '/home/sheffieldlab/Desktop/NoReward/Scripts/AnimalDetails/'
+sys.path.append(DataDetailsFolder)
+import DataDetails
+
 
 class Combinedpfs:
-    def __init__(self, CombinedDataFolder, ParentDataFolder, TaskDict, norewardtask, donotuseanimal, controlflag=0):
+    def __init__(self, CombinedDataFolder, ParentDataFolder, TaskDict, norewardtask, donotuseanimal, tasklen=2,
+                 controlflag=0):
         self.CombinedDataFolder = CombinedDataFolder
         self.ParentDataFolder = ParentDataFolder
         self.TaskDict = TaskDict
         self.donotuse = donotuseanimal
+        self.tasklen = tasklen
         self.controlflag = controlflag
         self.csvfiles_pfs = [f for f in os.listdir(self.CombinedDataFolder) if f.endswith('.csv') if
                              'common' not in f and 'reward' not in f]
@@ -37,45 +43,53 @@ class Combinedpfs:
             self.norewardtask = norewardtask
             self.csvfiles_reward = [f for f in os.listdir(self.CombinedDataFolder) if f.endswith('.csv') if
                                     'common' not in f and 'place' not in f]
-            self.rewardparam_combined = self.combineanimaldataframes(self.csvfiles_reward)
-        self.pfparam_combined = self.combineanimaldataframes(self.csvfiles_pfs)
+            self.rewardparam_combined = self.combineanimaldataframes(self.csvfiles_reward, self.tasklen)
+        self.pfparam_combined = self.combineanimaldataframes(self.csvfiles_pfs, self.tasklen)
 
         # Add no lick to taskdict
         self.new_taskDict = copy(self.TaskDict)
         self.new_taskDict['Task2b'] = '3 No Rew No Lick'
         self.new_taskDict = OrderedDict(sorted(self.new_taskDict.items()))
 
-    def combineanimaldataframes(self, csvfiles):
+    def combineanimaldataframes(self, csvfiles, tasklen):
+        count = 0
         for n, f in enumerate(csvfiles):
             animalname = f[:f.find('_')]
-            if animalname not in self.donotuse:
+            if not self.controlflag:
+                animalinfo = DataDetails.ExpAnimalDetails(animalname)
+            else:
+                animalinfo = DataDetails.ControlAnimals(animalname)
+            if len(animalinfo['task_dict']) >= tasklen:
                 print(f)
                 df = pd.read_csv(os.path.join(self.CombinedDataFolder, f), index_col=0)
-                if n == 0:
+                if count == 0:
                     combined_dataframe = df
                 else:
                     combined_dataframe = combined_dataframe.append(df, ignore_index=True)
+                count += 1
         return combined_dataframe
 
     def get_com_allanimal(self, taskA, taskB, vmax=0):
         com_all_animal = np.array([])
+        count = 0
         for n, f in enumerate(self.csvfiles_pfs):
             animalname = f[:f.find('_')]
-            if animalname not in self.donotuse:
+            animalinfo = DataDetails.ExpAnimalDetails(animalname)
+            if len(animalinfo['task_dict']) >= self.tasklen:
                 df = pd.read_csv(os.path.join(self.CombinedDataFolder, f), index_col=0)
                 t1 = df[df['Task'] == taskA]
                 t2 = df[df['Task'] == taskB]
                 combined = pd.merge(t1, t2, how='inner', on=['CellNumber'],
                                     suffixes=(f'_%s' % taskA, f'_%s' % taskB))
 
-                if n == 0:
+                if count == 0:
                     com_all_animal = np.vstack((combined[f'WeightedCOM_%s' % taskA] * self.trackbins,
                                                 combined[f'WeightedCOM_%s' % taskB] * self.trackbins))
                 else:
                     com_all_animal = np.hstack(
                         (com_all_animal, np.vstack((combined[f'WeightedCOM_%s' % taskA] * self.trackbins,
                                                     combined[f'WeightedCOM_%s' % taskB] * self.trackbins))))
-
+                count += 1
         self.plot_com_scatter_heatmap(com_all_animal, taskA, taskB, vmax=vmax)
 
     def plot_com_scatter_heatmap(self, combined_dataset, taskA, taskB, bins=10, vmax=0, datatype='array'):
@@ -143,25 +157,7 @@ class Combinedpfs:
             ax[n1].plot(np.mean(mean_pf_allanimals[t], 0), 'k', lw=2)
         return mean_pf_allanimals
 
-    def plot_all_placefields(self, tasks_to_plot):
-        pf_data_all = {k: np.array([]) for k in tasks_to_plot}
-        for n, f in enumerate(self.npyfiles):
-            animalname = f[:f.find('_')]
-            pcdata = np.load(os.path.join(self.CombinedDataFolder, f)).item()
-            for t in pcdata.keys():
-                if t in tasks_to_plot:
-                    if pf_data_all[t].size:
-                        pf_data_all[t] = np.vstack((pf_data_all[t], pcdata[t]))
-                    else:
-                        pf_data_all[t] = pcdata[t]
-        # Sort data and plot
-        pcsortednum = {k: [] for k in tasks_to_plot}
-        for t in tasks_to_plot:
-            pcsortednum[t] = np.argsort(np.nanargmax(pf_data_all[t], 1))
-        PlottingFunctions.plot_placecells_with_track_pertask(tasks_to_plot, pf_data_all, pcsortednum,
-                                                             figsize=(6, 4))
-
-    def plot_histogram_of_com(self, combined_dataframe, tasks_to_plot, bins=20, figsize=(10, 6)):
+    def plot_histogram_of_com(self, combined_dataframe, tasks_to_plot, bins=20, figsize=(10, 6), **kwargs):
         fs, ax = plt.subplots(2, len(tasks_to_plot), figsize=figsize, dpi=100, sharex='all', sharey='row')
         # Plot percentage of place fields
         normhist_all = {k: [] for k in tasks_to_plot}
@@ -169,10 +165,18 @@ class Combinedpfs:
             for n, taskname in enumerate(tasks_to_plot):
                 # Get number of active cells for calculating percentage
                 # Best way to normalise?
-                normfactor = np.sum(
-                    np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]))[
-                        'numPFs_incells'].item()[taskname])
-                # print(a, taskname, normfactor)
+                # if 'normtask' in kwargs.keys():
+                #     normfactor = np.sum(
+                #         np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]),
+                #                 allow_pickle=True)['numPFs_incells'].item()[kwargs['normtask']])
+                # else:
+                #     normfactor = np.sum(
+                #         np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]),
+                #                 allow_pickle=True)['numPFs_incells'].item()[taskname])
+
+                normfactor = np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]),
+                                     allow_pickle=True)['numcells']
+                # print(a, taskname, normfactor),
                 data = combined_dataframe[(combined_dataframe.Task == taskname) & (combined_dataframe.animalname == a)][
                            'WeightedCOM'] * self.trackbins
                 hist_com, bins_com, center, width = CommonFunctions.make_histogram(data, bins, normfactor,
@@ -186,59 +190,101 @@ class Combinedpfs:
         for n, taskname in enumerate(tasks_to_plot):
             task_data = combined_dataframe[(combined_dataframe.Task == taskname)]['WeightedCOM'] * self.trackbins
             sns.distplot(task_data, ax=ax[1, n], bins=40, color='black',
-                         kde=True,
-                         kde_kws={'kernel': 'gau', 'bw': 70, 'shade': True, 'cut': 0, 'lw': 0, 'color': [0.6, 0.6, 0.6],
+                         kde=True, hist=True,
+                         kde_kws={'kernel': 'gau', 'bw': 100, 'shade': True, 'cut': 0, 'lw': 0,
+                                  'color': [0.6, 0.6, 0.6],
                                   'alpha': 0.9},
-                         hist_kws={'histtype': 'step', 'color': 'k', 'lw': 3})
-            sns.kdeplot(task_data, ax=ax[1, n], kernel='gau', bw=2, lw=0, cut=0, shade=True, color='k', alpha=0.2)
+                         hist_kws={'histtype': 'step', 'color': 'k', 'lw': 1})
+            sns.kdeplot(task_data, ax=ax[1, n], kernel='biw', bw=2, gridsize=100, lw=0, cut=0, shade=True, color='k',
+                        alpha=0.2)
             ax[0, n].set_ylabel('Percentage of fields')
             ax[1, n].legend_.remove()
+
         for a in ax.flatten():
             pf.set_axes_style(a, numticks=4)
             # a.set_xlim((0 + 7, self.tracklength - 7))
         fs.tight_layout()
         return normhist_all, center
 
-    def calculate_ratiofiring_atrewzone(self, combined_dataframe, tasks_to_compare, ranges):
+    def plot_com_hist(self, ax, combined_dataframe, tasks_to_plot, bins=20, **kwargs):
+        for n, taskname in enumerate(tasks_to_plot):
+            task_data = combined_dataframe[(combined_dataframe.Task == taskname)]['WeightedCOM'] * self.trackbins
+            weights = np.ones_like(task_data) / float(len(task_data))
+            ax1 = ax[n].twinx()
+
+            sns.distplot(task_data, ax=ax1, bins=40, color='black',
+                         kde=True, hist=False,
+                         kde_kws={'kernel': 'gau', 'bw': 100, 'shade': True, 'cut': 0, 'lw': 0,
+                                  'color': [0.6, 0.6, 0.6],
+                                  'alpha': 0.9})
+
+            sns.distplot(task_data, ax=ax[n], bins=40, color='black',
+                         kde=False, hist=True, hist_kws={'histtype': 'step', 'color': 'k', 'lw': 1, 'weights': weights})
+
+            sns.kdeplot(task_data, ax=ax1, kernel='gau', bw=2, gridsize=100, lw=0, cut=0, shade=True, color='k',
+                        alpha=0.2)
+            ax1.set_ylim((0, 0.012))
+            ax[n].set_ylim((0, 0.06))
+            ax[n].set_xlim((0, 200))
+            ax[n].set_yticks((0, 0.03, 0.06))
+            ax[n].set_yticklabels((0, 3, 6))
+            ax[n].set_title(taskname)
+            ax1.legend_.remove()
+            ax1.set_yticks(())
+            sns.despine(right=True, top=True, left=True, bottom=True, ax=ax1)
+            sns.despine(right=True, top=True,  ax=ax[n])
+        ax[0].set_ylabel('Percent of fields')
+
+
+
+    def calculate_ratiofiring_atrewzone(self, ax, combined_dataframe, tasks_to_compare, ranges):
         cellratio_df = pd.DataFrame(columns=['Mid', 'End', 'Animal', 'TaskName'])
         cellratio_dict = {k: [] for k in tasks_to_compare}
         for n1, a in enumerate(np.unique(combined_dataframe.animalname)):
-            print(a)
-            for n2, taskname in enumerate(tasks_to_compare):
+            if not self.controlflag:
+                animalinfo = DataDetails.ExpAnimalDetails(a)
+                if len(animalinfo['task_dict']) == 4:
+                    compare = tasks_to_compare
+                else:
+                    compare = tasks_to_compare[:-1]
+            else:
+                compare = tasks_to_compare
+            for n2, taskname in enumerate(compare):
                 normfactor = np.sum(
-                    np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]))[
-                        'numPFs_incells'].item()[taskname])
+                    np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]),
+                            allow_pickle=True)[
+                        'numcells'].item())
                 data = combined_dataframe[(combined_dataframe.Task == taskname) & (combined_dataframe.animalname == a)]
                 g = data.groupby(pd.cut(data.WeightedCOM * 5, ranges)).count()['WeightedCOM'].tolist()
-                cellratio_df = cellratio_df.append({'Mid': np.mean(g[:-1]) / normfactor,
-                                                    'End': g[-1] / normfactor,
+                cellratio_df = cellratio_df.append({'Beg': (np.mean(g[0:2]) / normfactor) * 100,
+                                                    'Mid': (np.mean(g[2:-2]) / normfactor) * 100,
+                                                    'End': (g[-1] / normfactor) * 100,
                                                     'Animal': a, 'TaskName': taskname},
                                                    ignore_index=True)
-                cellratio_dict[taskname].append(g / normfactor)
+                # cellratio_dict[taskname].append(g / normfactor)
         df = cellratio_df.melt(id_vars=['Animal', 'TaskName'], var_name='Track', value_name='Ratio')
-        for taskname in tasks_to_compare:
-            cellratio_dict[taskname] = np.asarray(cellratio_dict[taskname])
+        if self.controlflag:
+            sns.pointplot(x='Track', y='Ratio', hue='TaskName', order=['Beg', 'Mid', 'End'],
+                          hue_order=['Task1a', 'Task1b'],
+                          data=df, dodge=0.35, capsize=.1, ci=68, lw=0.3, ax=ax)
+        else:
+            sns.pointplot(x='Track', y='Ratio', hue='TaskName', order=['Beg', 'Mid', 'End'],
+                          hue_order=['Task1', 'Task2b', 'Task3'],
+                          data=df, dodge=0.35, capsize=.1, ci=68, lw=0.3, ax=ax)
+        ax.legend(bbox_to_anchor=(0, -0.5), loc=2, borderaxespad=0., ncol=2)
 
-        fs, ax = plt.subplots(1, dpi=100, figsize=(5, 3))
-        sns.barplot(x='TaskName', y='Ratio', data=df[df.Track != 'Beg'],
-                    hue='Track', palette='Set2', ax=ax)
-        # Plot individual datapoints with a line
-        startpnt = -0.25
-        for i in tasks_to_compare:
-            x = df[(df.Track == 'Mid') & (df.TaskName == i)]['Ratio']
-            y = df[(df.Track == 'End') & (df.TaskName == i)]['Ratio']
-            ax.plot([startpnt, startpnt + 0.5], [x, y], 'k.-', alpha=0.5)
-            startpnt += 1
+        # Get p-values
+        for track in ['Beg', 'Mid', 'End']:
+            for t1 in tasks_to_compare:
+                for t2 in tasks_to_compare[1:]:
+                    if t1 != t2:
+                        x = df[(df.TaskName == t1) & (df.Track == track)]['Ratio']
+                        y = df[(df.TaskName == t2) & (df.Track == track)]['Ratio']
+                        t, p = scipy.stats.mannwhitneyu(x, y)
+                        print('Track %s : Between %s and %s: %0.3f, significant %s' % (
+                            track, t1, t2, p, p < 0.05))
 
         pf.set_axes_style(ax)
-        ax.set_ylabel('Percentage of fields')
-        ax.legend(bbox_to_anchor=(1.2, 1), loc='upper right')
-        for i in tasks_to_compare:
-            x = df[(df.Track == 'Mid') & (df.TaskName == i)]['Ratio']
-            y = df[(df.Track == 'End') & (df.TaskName == i)]['Ratio']
-            d, p = scipy.stats.ttest_rel(x, y)
-            print(f'%s: T-test : p-value %0.4f' % (i, p))
-
         return df, cellratio_df, cellratio_dict
 
     def get_data_folders(self, FolderName):
@@ -581,6 +627,7 @@ class FindRewardCells(Combinedpfs):
         sns.boxplot(x='Task', y='mean_correlation', data=df, palette='Blues', ax=ax, showfliers=False)
         sns.stripplot(x='Task', y='mean_correlation', data=df, color='k', size=2, ax=ax)
         pf.set_axes_style(ax)
+
 
 class CommonFunctions:
     @staticmethod

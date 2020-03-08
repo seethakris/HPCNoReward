@@ -28,9 +28,14 @@ def ExpAnimalDetails(animalname, classifier_type='Bayes'):
                                          'Task3': 15000,
                                          'Task4': 15000}
 
-        # To make sure k-fold validation is equalised
+        # # To make sure k-fold validation is equalised
+        # Detailsdict['task_framestokeep'] = {'Task1': 11100,
+        #                                     'Task2': -2605,
+        #                                     'Task3': -2,
+        #                                     'Task4': -4}  # Track Parameters
+
         Detailsdict['task_framestokeep'] = {'Task1': 11100,
-                                            'Task2': -3000,
+                                            'Task2': -2600,
                                             'Task3': -2,
                                             'Task4': -4}  # Track Parameters
 
@@ -55,9 +60,14 @@ def ExpAnimalDetails(animalname, classifier_type='Bayes'):
                                          'Task3': 20000,
                                          'Task4': 15000}
 
-        # To make sure k-fold validation is equalised
+        # # To make sure k-fold validation is equalised
+        # Detailsdict['task_framestokeep'] = {'Task1': -1,
+        #                                     'Task2': -118,
+        #                                     'Task3': -6,
+        #                                     'Task4': -8}  # Track Parameters
+
         Detailsdict['task_framestokeep'] = {'Task1': -1,
-                                            'Task2': -3,
+                                            'Task2': -113,
                                             'Task3': -6,
                                             'Task4': -8}  # Track Parameters
 
@@ -84,9 +94,9 @@ def ExpAnimalDetails(animalname, classifier_type='Bayes'):
 
         # To make sure k-fold validation is equalised
         Detailsdict['task_framestokeep'] = {'Task1': -8,
-                                            'Task2': -1,
-                                            'Task3': -10,
-                                            'Task4': -2}
+                                            'Task2': -111,
+                                            'Task3': -165,
+                                            'Task4': -113}
 
         Detailsdict['task_framestokeep_afterendzone'] = {'Task1': -7,
                                                          'Task2': -7,
@@ -138,9 +148,9 @@ def ExpAnimalDetails(animalname, classifier_type='Bayes'):
 
         # To make sure k-fold validation is equalised
         Detailsdict['task_framestokeep'] = {'Task1': -2,
-                                            'Task2': -3,
-                                            'Task3': -4,
-                                            'Task4': -8}
+                                            'Task2': -174,
+                                            'Task3': -191,
+                                            'Task4': -78}
 
         Detailsdict['task_framestokeep_afterendzone'] = {'Task1': -10,
                                                          'Task2': -6,
@@ -165,7 +175,7 @@ def ExpAnimalDetails(animalname, classifier_type='Bayes'):
 
         # To make sure k-fold validation is equalised
         Detailsdict['task_framestokeep'] = {'Task1': -7,
-                                            'Task2': -3,
+                                            'Task2': -269,
                                             'Task3': -3,
                                             'Task4': -6}
 
@@ -192,7 +202,7 @@ def ExpAnimalDetails(animalname, classifier_type='Bayes'):
                                          'Task2': 20000}
 
         # To make sure k-fold validation is equalised
-        Detailsdict['task_framestokeep'] = {'Task1': -5,
+        Detailsdict['task_framestokeep'] = {'Task1': -96,
                                             'Task2': -11}  # Track Parameters
 
         Detailsdict['trackstart_index'] = {'Task1': 0,
@@ -210,8 +220,8 @@ def ExpAnimalDetails(animalname, classifier_type='Bayes'):
                                          'Task2': 20000}
 
         # To make sure k-fold validation is equalised
-        Detailsdict['task_framestokeep'] = {'Task1': -1,
-                                            'Task2': -10}  # Track Parameters
+        Detailsdict['task_framestokeep'] = {'Task1': -23,
+                                            'Task2': -161}  # Track Parameters
 
         Detailsdict['trackstart_index'] = {'Task1': 0,
                                            'Task2': 2}
@@ -288,6 +298,48 @@ def ExpAnimalDetails(animalname, classifier_type='Bayes'):
         # To make sure k-fold validation is equalised
         Detailsdict['task_framestokeep'] = {'Task1': -8,
                                             'Task2': -2,
+                                            }  # Track Parameters
+
+        Detailsdict['trackstart_index'] = {'Task1': 0,
+                                           'Task2': 1,
+                                           }
+        Detailsdict['v73_flag'] = 0
+        Detailsdict['animal'] = animalname
+
+    if animalname == 'NR32':
+        Detailsdict['foldername'] = '/home/sheffieldlab/Desktop/NoReward/ImagingData/Good_behavior/Dataused/NR32/'
+
+        Detailsdict['task_dict'] = {'Task1': '1 Fam Rew',
+                                    'Task2': '2 No Rew'}
+
+        Detailsdict['task_numframes'] = {'Task1': 15000,
+                                         'Task2': 25000,
+                                         }
+
+        # To make sure k-fold validation is equalised
+        Detailsdict['task_framestokeep'] = {'Task1': -4,
+                                            'Task2': -204,
+                                            }  # Track Parameters
+
+        Detailsdict['trackstart_index'] = {'Task1': 0,
+                                           'Task2': 1,
+                                           }
+        Detailsdict['v73_flag'] = 0
+        Detailsdict['animal'] = animalname
+
+    if animalname == 'NR34':
+        Detailsdict['foldername'] = '/home/sheffieldlab/Desktop/NoReward/ImagingData/Good_behavior/Dataused/NR34/'
+
+        Detailsdict['task_dict'] = {'Task1': '1 Fam Rew',
+                                    'Task2': '2 No Rew'}
+
+        Detailsdict['task_numframes'] = {'Task1': 15000,
+                                         'Task2': 25000,
+                                         }
+
+        # To make sure k-fold validation is equalised
+        Detailsdict['task_framestokeep'] = {'Task1': -149,
+                                            'Task2': -179,
                                             }  # Track Parameters
 
         Detailsdict['trackstart_index'] = {'Task1': 0,

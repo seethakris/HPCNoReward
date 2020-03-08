@@ -42,6 +42,7 @@ def runSVM(animalinfo, classifier_type='Bayes'):
     data = LoadData(FolderName=animalinfo['foldername'], Task_NumFrames=animalinfo['task_numframes'],
                     TaskDict=animalinfo['task_dict'], framestokeep=animalinfo['task_framestokeep'],
                     v73_flag=animalinfo['v73_flag'])
+
     bin_behdata = PrepareBehaviorData(BehaviorData=data.good_running_data, TaskDict=animalinfo['task_dict'],
                                       tracklength=animalinfo['tracklength'], trackbins=animalinfo['trackbins'],
                                       plotpdf=pdf,
@@ -290,12 +291,12 @@ class SVM(object):
             model = SVC(kernel='linear', probability=True)
             model.fit(x_train, y_train)
         elif classifier_type == 'Bayes':
-            print('Fitting Bayes')
+            # print('Fitting Bayes')
             model = GaussianNB()
             model.fit(x_train, y_train)
 
         end = time.time()
-        print(f'Elapsed time %d seconds' % (end - start))
+        # print(f'Elapsed time %d seconds' % (end - start))
 
         return model
 
@@ -303,11 +304,11 @@ class SVM(object):
     def validate_model(model, x_test, y_test, task, plotflag, classifier_type='Bayes',
                        **kwargs):
         scores = model.score(x_test, y_test)
-        print("\nAccuracy of test set:: %.2f%%" % scores)
+        # print("\nAccuracy of test set:: %.2f%%" % scores)
         y_pred = model.predict(x_test)
         y_prob = model.predict_log_proba(x_test)
         bins = np.max(y_test)
-        print('Max Bins ', bins)
+        # print('Max Bins ', bins)
 
         # # Calculate error as an angle to correct for large jumps at the end
         yang_test = (y_test * 360) / bins
@@ -339,11 +340,11 @@ class SVM(object):
         #
         # yang_trace = np.round((yang_diff * bins) / 360)
         # yang_diff = y_test - yang_trace
-        print('Trace Limits', np.min(yang_trace), np.max(yang_trace))
+        # print('Trace Limits', np.min(yang_trace), np.max(yang_trace))
 
         # Uncorrected
-        #yang_trace = y_pred
-        #yang_diff = y_test - yang_trace
+        # yang_trace = y_pred
+        # yang_diff = y_test - yang_trace
 
         if plotflag:
             fs, axis = plt.subplots(1, figsize=(10, 3), dpi=80)
@@ -368,13 +369,13 @@ class SVM(object):
             columns=['CVIndex', 'ModelAccuracy', 'R2', 'R2_angle', 'rho', 'Y_diff', 'y_test',
                      'y_predict', 'y_predict_angle', 'Y_ang_diff'])
         for train_index, test_index in k.split(x):
-            print(f'Validation %d' % count_cv)
+            # print(f'Validation %d' % count_cv)
             # Split data
             xcv_train, xcv_test = x[train_index], x[test_index]
             ycv_train, ycv_test = y[train_index], y[test_index]
 
-            print(np.shape(xcv_train), np.shape(ycv_train),
-                  np.shape(xcv_test), np.shape(ycv_test))
+            # print(np.shape(xcv_train), np.shape(ycv_train),
+            #       np.shape(xcv_test), np.shape(ycv_test))
 
             # Run Model
             cvsnbmodel = self.fit_SVM(x_train=xcv_train, y_train=ycv_train, classifier_type=classifier_type)
@@ -389,7 +390,7 @@ class SVM(object):
             R2 = CommonFunctions.get_R2(y_actual=ycv_test, y_predicted=ycv_predict)
             R2_angle = CommonFunctions.get_R2(y_actual=ycv_test, y_predicted=ycv_predict_angle)
             rho = CommonFunctions.get_rho(y_actual=ycv_test, y_predicted=ycv_predict)
-            print('CV shape', np.shape(np.abs(ycv_test - ycv_predict)))
+            # print('CV shape', np.shape(np.abs(ycv_test - ycv_predict)))
             nbcv_dataframe = nbcv_dataframe.append({'CVIndex': count_cv,
                                                     'ModelAccuracy': ycv_scores,
                                                     'Y_diff': np.abs(ycv_test - ycv_predict),
@@ -420,7 +421,7 @@ class SVM(object):
                 count_cv = 1
                 # Also do k-fold validation for these iterations
                 for train_index, test_index in k.split(x_resample):
-                    print(f'Validation %d' % count_cv)
+                    # print(f'Validation %d' % count_cv)
                     # Split data
                     x_rs_train, x_rs_test = x_resample[train_index], x_resample[test_index]
                     y_rs_train, y_rs_test = y[train_index], y[test_index]
@@ -531,6 +532,7 @@ class SVMValidationPlots(object):
                 y_test = np.asarray(modeldataframe[t]['K-foldDataframe']['y_test'][k])
                 for i in np.arange(numbins):
                     Y_indices = np.where(y_test == i)[0]
+
                     Y_diff_by_track_mean[k, i] = np.mean(y_diff[Y_indices])
 
             meandiff = np.nanmean(Y_diff_by_track_mean, 0)

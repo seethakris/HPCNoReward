@@ -51,7 +51,6 @@ class CompileData(object):
                 vinspace = np.vstack(
                     (vinspace, data[a][kwargs['tasktoplot']])) if vinspace.size else data[a][kwargs['tasktoplot']]
                 axis.set_title(kwargs['tasktoplot'])
-                axis.set_ylabel('Normalized velocity')
             else:
                 vinspace = np.vstack(
                     (vinspace, data[a])) if vinspace.size else data[a]

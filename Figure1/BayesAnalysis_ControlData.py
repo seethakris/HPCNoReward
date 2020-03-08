@@ -29,10 +29,12 @@ class BayesError(object):
         self.controlflag = controlflag
         self.ple = PlotErrorData
         self.colors = sns.color_palette(["#3498db", "#9b59b6"])
-
+        self.tracklength = 200
+        self.trackbins = 5
         self.BayesFolder = BayesFolder
         self.ParentDataFolder = ParentDataFolder
         self.accuracy_dict, self.numlaps_dict = self.get_lapwiseerror_peranimal()
+        self.accuracy_dict_incm = self.get_lapwiseerror_incm()
 
     def load_lick_around_reward(self, taskstoplot):
         files = [f for f in os.listdir(self.ParentDataFolder) if 'Bayes' not in f and 'Lick' not in f]
@@ -74,6 +76,24 @@ class BayesError(object):
 
         return accuracy_dict, numlaps_dict
 
+    def get_lapwiseerror_incm(self):
+        files = [f for f in os.listdir(self.BayesFolder)]
+        accuracy_dict = OrderedDict()
+        for f in files:
+            animalname = f[:f.find('_')]
+            print(f)
+            animal_tasks = DataDetails.ControlAnimals(animalname)['task_dict']
+            data = np.load(os.path.join(self.BayesFolder, f), allow_pickle=True)
+            animal_accuracy = {k: [] for k in animal_tasks}
+            for t in animal_tasks:
+                print(t)
+                animal_accuracy[t] = self.calulate_lapwiseerror_incm(y_actual=data['fit'].item()[t]['ytest'],
+                                                                     y_predicted=data['fit'].item()[t]['yang_pred'],
+                                                                     numlaps=data['numlaps'].item()[t],
+                                                                     lapframes=data['lapframes'].item()[t])
+            accuracy_dict[animalname] = animal_accuracy
+        return accuracy_dict
+
     def calulate_lapwiseerror(self, y_actual, y_predicted, numlaps, lapframes):
         lap_R2 = []
         for l in np.arange(numlaps - 1):
@@ -82,6 +102,16 @@ class BayesError(object):
 
         return np.asarray(lap_R2)
 
+    def calulate_lapwiseerror_incm(self, y_actual, y_predicted, numlaps, lapframes):
+        lap_error_incm = []
+        for l in np.arange(numlaps):
+            laps = np.where(lapframes == l + 1)[0]
+            y_error = self.get_cm_error(y_actual[laps], y_predicted[laps])
+            if ~np.all(np.isnan(y_error)):
+                lap_error_incm.append(y_error)
+
+        return np.asarray(lap_error_incm)
+
     @staticmethod
     def get_R2(y_actual, y_predicted):
         y_mean = np.mean(y_actual)
@@ -89,6 +119,17 @@ class BayesError(object):
         if np.isinf(R2):
             R2 = 0
         return R2
+
+    def get_cm_error(self, y_actual, y_predicted):
+        numbins = int(self.tracklength / self.trackbins)
+        y_diff = (np.abs(np.nan_to_num(y_actual) - np.nan_to_num(y_predicted))) * self.trackbins
+        # Bin error by track
+        y_diff_by_track = np.zeros(np.max(numbins))
+        for i in np.arange(numbins):
+            y_indices = np.where(y_actual == i)[0]
+            y_diff_by_track[i] = np.nanmean(y_diff[y_indices])
+
+        return y_diff_by_track
 
 
 class GetErrordata(BayesError):
@@ -156,8 +197,61 @@ class GetErrordata(BayesError):
         self.ple.plot_bayeserror_bytimebins(axis, bin_df, bin_compiled_df)
         GetPValues().get_shuffle_pvalue(bin_compiled_df, taskstocompare=['Bin0', 'Bin1', 'Bin2', 'Bin3'])
 
+    def get_bayes_error_withtracklength(self, ax, taskstoplot, lickthreshold=2):
+        bayeserror_withtrack = {k: [] for k in taskstoplot}
+        for n1, animal in enumerate(self.accuracy_dict_incm):
+            # print(animal, laps_with_nolicks)
+            for n2, t in enumerate(self.accuracy_dict_incm[animal]):
+                if t in taskstoplot:
+                    decodererror = self.accuracy_dict_incm[animal][t]
+                    tasklap = np.size(decodererror, 0)
+                    if t == 'Task1a':
+                        bayeserror_withtrack[t].append(np.nanmean(decodererror[-10:, :], 0))
+                    else:
+                        bayeserror_withtrack[t].append(np.nanmean(decodererror, 0))
+        for t in taskstoplot:
+            bayeserror_withtrack[t] = np.asarray(bayeserror_withtrack[t])
+        self.ple.plot_errorwith_tracklength(ax[0], self.colors, bayeserror_withtrack, taskstoplot)
+        bayes_diff = self.ple.plot_errorwith_tracklength_difference(ax[1], bayeserror_withtrack)
+        return bayeserror_withtrack, bayes_diff
+
 
 class PlotErrorData:
+    @staticmethod
+    def plot_errorwith_tracklength(ax, colors, accuracy_dataframe, taskstoplot):
+        for n, t in enumerate(taskstoplot):
+            m = np.nanmean(accuracy_dataframe[t], 0)
+            sem = scipy.stats.sem(accuracy_dataframe[t], 0, nan_policy='omit')
+            ax.plot(m, color=colors[n], label=t)
+            ax.fill_between(np.arange(np.size(m)), m - sem, m + sem, color=colors[n], alpha=0.5)
+            # print(np.shape(accuracy_dataframe[t]))
+        pf.set_axes_style(ax)
+        ax.set_xlabel('Track Length (cm)')
+        ax.set_ylabel('Accuracy (cm)')
+        # ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        ax.set_xlim((1, 40))
+
+        # # #Calculate p-value
+        # for n in np.arange(np.size(accuracy_dataframe['Task1'], 1)):
+        #     t, p = scipy.stats.mannwhitneyu(accuracy_dataframe['Task1'][:, n], accuracy_dataframe['Task2'][:, n])
+        #     if p < 0.05:
+        #         ax.plot(n, 35, 'k*')
+
+    @staticmethod
+    def plot_errorwith_tracklength_difference(ax, accuracy_dataframe):
+        diff = []
+        for i in np.arange(np.size(accuracy_dataframe['Task1a'], 0)):
+            diff.append(np.abs(accuracy_dataframe['Task1a'][i, :] - accuracy_dataframe['Task1b'][i, :]))
+        diff = np.asarray(diff)
+        # print(np.shape(diff))
+        m = np.nanmean(diff, 0)
+        sem = scipy.stats.sem(diff, 0, nan_policy='omit')
+        ax.errorbar(np.arange(np.size(m)), m, yerr=sem, marker='o', markerfacecolor='none', color='k')
+        ax.set_xlim((1, 40))
+        ax.set_xlabel('Track Length (cm)')
+        pf.set_axes_style(ax)
+        return diff
+
     @staticmethod
     def plot_accuracy_boxplot(ax, colors, accuracy_dataframe, taskstoplot):
         df_melt = accuracy_dataframe.melt(var_name='Task', value_name='Error')

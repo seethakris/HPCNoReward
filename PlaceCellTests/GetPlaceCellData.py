@@ -19,12 +19,13 @@ import plottingfunctions as pf
 
 
 class GetData:
-    def __init__(self, animalinfo, FolderName, v73_flag=0, controlflag=0, noreward_task='Task2'):
+    def __init__(self, animalinfo, FolderName, v73_flag=0, controlflag=0, noreward_task='Task2', rewardflag=0):
         self.FolderName = FolderName
         self.FigureFolder = os.path.join(self.FolderName, 'Figures')
         self.SaveFolder = os.path.join(self.FolderName, 'PlaceCells')
         self.controlflag = controlflag
         self.noreward_task = noreward_task
+        self.rewardflag = rewardflag
         self.nsecondsroundrew = 1
         self.framerate = 30.98
         if self.controlflag:
@@ -69,7 +70,7 @@ class GetData:
         self.calculate_pfparameters()
         self.correlate_acivity_of_allcellsbytask()
         self.common_droppedcells_withTask1()
-        if not self.controlflag:
+        if not self.controlflag and self.rewardflag:
             self.collect_data_around_rewardzone()
             self.reward_data_correlation(self.reward_imaging_data)
             self.calculate_reward_cell_parameters()
@@ -165,7 +166,7 @@ class GetData:
             cellcount = 0
             for n in np.arange(np.size(self.sig_PFs_cellnum[taskname])):
                 for i in np.arange(self.numPFS_incells[taskname][n]):
-                    pc_activity[cellcount, :] = np.nanmean(x['sig_PFs'][i][self.sig_PFs_cellnum[taskname][n]], 1)
+                    pc_activity[cellcount, :] = np.nanmean(x['sig_PFs_with_noise'][i][self.sig_PFs_cellnum[taskname][n]], 1)
                     cellcount += 1
             pcsortednum[taskname] = np.argsort(np.nanargmax(pc_activity, 1))
             pc_activity_dict[taskname] = pc_activity
@@ -482,7 +483,7 @@ class GetData:
         self.pfparams_df['animalname'] = self.animalname
         self.pfparams_df.to_csv(os.path.join(self.SaveDataframeFolder, f'%s_placecellparams_df.csv' % self.animalname))
 
-        if not self.controlflag:
+        if not self.controlflag and self.rewardflag:
             self.reward_df['animalname'] = self.animalname
             self.reward_df.to_csv(
                 os.path.join(self.SaveDataframeFolder, f'%s_rewardcellparams_df.csv' % self.animalname))
@@ -494,17 +495,23 @@ class GetData:
                      dropped_cells=self.droppedcells, common_cells=self.commoncells,
                      correlation_withTask1=self.correlation_per_task, numcells=self.numcells,
                      animalname=self.animalname, Fc3data=self.Fc3data_dict, framerate=self.framerate)
-        else:
-            np.savez(os.path.join(self.SaveDataframeFolder, f'%s_placecell_data.npz' % self.animalname),
+        elif not self.controlflag and self.rewardflag:
+            np.savez(os.path.join(self.SaveDataframeFolder, f'%s_reward_data.npz' % self.animalname),
                      sig_PFs_cellnum=self.sig_PFs_cellnum, numPFs_incells=self.numPFS_incells,
                      dropped_cells=self.droppedcells, common_cells=self.commoncells,
                      correlation_withTask1=self.correlation_per_task, numcells=self.numcells,
                      animalname=self.animalname, Fc3data=self.Fc3data_dict, rewarddata_percell=self.reward_imaging_data,
                      rewardzone_Fc3=self.reward_Fc3_pertask, rewardcorrelation=self.reward_correlation_data,
                      nsecondsroundrew=self.nsecondsroundrew, framerate=self.framerate)
+        else:
+            np.savez(os.path.join(self.SaveDataframeFolder, f'%s_placecell_data.npz' % self.animalname),
+                     sig_PFs_cellnum=self.sig_PFs_cellnum, numPFs_incells=self.numPFS_incells,
+                     dropped_cells=self.droppedcells, common_cells=self.commoncells,
+                     correlation_withTask1=self.correlation_per_task, numcells=self.numcells,
+                     animalname=self.animalname, Fc3data=self.Fc3data_dict, framerate=self.framerate)
 
     def save_pcs(self, pcdict, savename):
-        np.save(os.path.join(self.SaveDataframeFolder, f'%s_%s.npy' % (self.animalname, savename)), pcdict)
+        np.save(os.path.join(self.FolderName, 'PlaceCells', '%s_%s' % (self.animalname, savename)), pcdict)
 
 
 class PlottingFunctions(GetData):

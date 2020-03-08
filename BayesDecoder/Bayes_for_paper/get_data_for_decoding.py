@@ -32,9 +32,9 @@ import plottingfunctions as pf
 pf.set_style()
 
 # Some global parameters for easy change
-plot_kfold = 0
+plot_kfold = 1
 plot_numcells = 0
-kfold_splits = 5
+kfold_splits = 10
 numcell_iterations = 10
 numcell_kfold_splits = 5
 
@@ -307,7 +307,7 @@ class SVM(object):
                       verbose=0)
 
         end = time.time()
-        print(f'Elapsed time %d seconds' % (end - start))
+        # print(f'Elapsed time %d seconds' % (end - start))
 
         return model
 
@@ -317,13 +317,13 @@ class SVM(object):
             print('Fitting NN')
             y_cat = to_categorical(y_test)
             scores = model.evaluate(x_test, y_cat, batch_size=1000)
-            print("\nAccuracy of training set: %.2f%%" % (scores[1] * 100))
+            # print("\nAccuracy of training set: %.2f%%" % (scores[1] * 100))
             y_pred = model.predict_classes(x_test)
             y_prob = model.predict_classes(x_test)
-            print('Prediction', np.shape(y_pred))
+            # print('Prediction', np.shape(y_pred))
         else:
             scores = model.score(x_test, y_test)
-            print("\nAccuracy of test set:: %.2f%%" % scores)
+            # print("\nAccuracy of test set:: %.2f%%" % scores)
             y_pred = model.predict(x_test)
             y_prob = model.predict_proba(x_test)
 
@@ -349,13 +349,13 @@ class SVM(object):
             columns=['CVIndex', 'ModelAccuracy', 'R2', 'rho', 'Y_diff', 'y_test',
                      'y_predict'])
         for train_index, test_index in k.split(x):
-            print(f'Validation %d' % count_cv)
+            # print(f'Validation %d' % count_cv)
             # Split data
             xcv_train, xcv_test = x[train_index], x[test_index]
             ycv_train, ycv_test = y[train_index], y[test_index]
 
-            print(np.shape(xcv_train), np.shape(ycv_train),
-                  np.shape(xcv_test), np.shape(ycv_test))
+            # print(np.shape(xcv_train), np.shape(ycv_train),
+            #       np.shape(xcv_test), np.shape(ycv_test))
 
             # Run Model
             cvsnbmodel = self.fit_SVM(x_train=xcv_train, y_train=ycv_train, classifier_type=classifier_type)
@@ -368,7 +368,7 @@ class SVM(object):
             backend.clear_session()
             R2 = CommonFunctions.get_R2(y_actual=ycv_test, y_predicted=ycv_predict)
             rho = CommonFunctions.get_rho(y_actual=ycv_test, y_predicted=ycv_predict)
-            print('CV shape', np.shape(np.abs(ycv_test - ycv_predict)))
+            # print('CV shape', np.shape(np.abs(ycv_test - ycv_predict)))
             nbcv_dataframe = nbcv_dataframe.append({'CVIndex': count_cv,
                                                     'ModelAccuracy': ycv_scores,
                                                     'Y_diff': np.abs(ycv_test - ycv_predict),
@@ -396,7 +396,7 @@ class SVM(object):
                 count_cv = 1
                 # Also do k-fold validation for these iterations
                 for train_index, test_index in k.split(x_resample):
-                    print(f'Validation %d' % count_cv)
+                    # print(f'Validation %d' % count_cv)
                     # Split data
                     x_rs_train, x_rs_test = x_resample[train_index], x_resample[test_index]
                     y_rs_train, y_rs_test = y[train_index], y[test_index]
