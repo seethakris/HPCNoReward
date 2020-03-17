@@ -98,8 +98,8 @@ class Combinedpfs:
         if datatype == 'array':
             y = combined_dataset[0, :]
             x = combined_dataset[1, :]
-        ax[0].scatter(y, x, color='k')
-        ax[0].plot([0, self.tracklength], [0, self.tracklength], linewidth=2, color=".3")
+        ax[0].scatter(y, x, color='k', s=3)
+        ax[0].plot([0, self.tracklength], [0, self.tracklength], linewidth=1, color=".3")
         ax[0].set_xlabel(taskB)
         ax[0].set_ylabel(taskA)
         ax[0].set_title('Center of Mass')
@@ -163,17 +163,6 @@ class Combinedpfs:
         normhist_all = {k: [] for k in tasks_to_plot}
         for a in np.unique(combined_dataframe.animalname):
             for n, taskname in enumerate(tasks_to_plot):
-                # Get number of active cells for calculating percentage
-                # Best way to normalise?
-                # if 'normtask' in kwargs.keys():
-                #     normfactor = np.sum(
-                #         np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]),
-                #                 allow_pickle=True)['numPFs_incells'].item()[kwargs['normtask']])
-                # else:
-                #     normfactor = np.sum(
-                #         np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]),
-                #                 allow_pickle=True)['numPFs_incells'].item()[taskname])
-
                 normfactor = np.load(os.path.join(self.CombinedDataFolder, [f for f in self.npzfiles if a in f][0]),
                                      allow_pickle=True)['numcells']
                 # print(a, taskname, normfactor),
@@ -190,15 +179,15 @@ class Combinedpfs:
         for n, taskname in enumerate(tasks_to_plot):
             task_data = combined_dataframe[(combined_dataframe.Task == taskname)]['WeightedCOM'] * self.trackbins
             sns.distplot(task_data, ax=ax[1, n], bins=40, color='black',
-                         kde=True, hist=True,
+                         kde=False, hist=True,
                          kde_kws={'kernel': 'gau', 'bw': 100, 'shade': True, 'cut': 0, 'lw': 0,
                                   'color': [0.6, 0.6, 0.6],
                                   'alpha': 0.9},
                          hist_kws={'histtype': 'step', 'color': 'k', 'lw': 1})
-            sns.kdeplot(task_data, ax=ax[1, n], kernel='biw', bw=2, gridsize=100, lw=0, cut=0, shade=True, color='k',
-                        alpha=0.2)
+            # sns.kdeplot(task_data, ax=ax[1, n], kernel='biw', bw=2, gridsize=100, lw=0, cut=0, shade=True, color='k',
+            #             alpha=0.2)
             ax[0, n].set_ylabel('Percentage of fields')
-            ax[1, n].legend_.remove()
+            # ax[1, n].legend_.remove()
 
         for a in ax.flatten():
             pf.set_axes_style(a, numticks=4)
@@ -228,14 +217,13 @@ class Combinedpfs:
             ax[n].set_xlim((0, 200))
             ax[n].set_yticks((0, 0.03, 0.06))
             ax[n].set_yticklabels((0, 3, 6))
+            ax[n].set_xlabel('COM')
             ax[n].set_title(taskname)
             ax1.legend_.remove()
             ax1.set_yticks(())
             sns.despine(right=True, top=True, left=True, bottom=True, ax=ax1)
-            sns.despine(right=True, top=True,  ax=ax[n])
+            sns.despine(right=True, top=True, ax=ax[n])
         ax[0].set_ylabel('Percent of fields')
-
-
 
     def calculate_ratiofiring_atrewzone(self, ax, combined_dataframe, tasks_to_compare, ranges):
         cellratio_df = pd.DataFrame(columns=['Mid', 'End', 'Animal', 'TaskName'])

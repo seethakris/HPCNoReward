@@ -11,6 +11,7 @@ import sys
 import scipy.stats
 import h5py
 from matplotlib.backends.backend_pdf import PdfPages
+from scipy.optimize import curve_fit
 
 # For plotting styles
 PlottingFormat_Folder = '/home/sheffieldlab/Desktop/NoReward/Scripts/PlottingTools/'
@@ -30,10 +31,10 @@ class GetData:
         self.framerate = 30.98
         if self.controlflag:
             self.SaveDataframeFolder = os.path.join(
-                '/home/sheffieldlab/Desktop/NoReward/PlaceFieldCodeTest/ControlAnimals/PlaceCellResults_All/')
+                '/home/sheffieldlab/Desktop/NoReward/ControlData/Dataused/PlaceCellResults_All/')
         else:
             self.SaveDataframeFolder = os.path.join(
-                '/home/sheffieldlab/Desktop/NoReward/PlaceFieldCodeTest/ExpAnimals/PlaceCellResults_All/')
+                '/home/sheffieldlab/Desktop/NoReward/ImagingData/Good_behavior/Dataused/PlaceCellResults_All/')
 
         self.TaskDict = animalinfo['task_dict']
         self.Task_Numframes = animalinfo['task_numframes']
@@ -45,6 +46,13 @@ class GetData:
             os.mkdir(self.FigureFolder)
         if not os.path.exists(self.SaveFolder):
             os.mkdir(self.SaveFolder)
+
+        if self.controlflag:
+            self.new_taskDict = copy(self.TaskDict)
+        else:
+            self.new_taskDict = copy(self.TaskDict)
+            self.new_taskDict[f'%sb' % self.noreward_task] = '2 No Rew No Lick'
+        self.new_taskDict = OrderedDict(sorted(self.new_taskDict.items()))
 
         self.get_data_folders()
         if v73_flag:
@@ -60,13 +68,8 @@ class GetData:
             print(self.lickstoplap, self.lickstopframe)
         # Find significant place cells
         # Add no lick data where exists
-        if self.controlflag:
-            self.new_taskDict = copy(self.TaskDict)
-        else:
-            self.new_taskDict = copy(self.TaskDict)
-            self.new_taskDict[f'%sb' % self.noreward_task] = '2 No Rew No Lick'
-        self.new_taskDict = OrderedDict(sorted(self.new_taskDict.items()))
         self.find_sig_PFs_cellnum_bytask()
+        self.beginning_cells = self.revise_sig_PFs()
         self.calculate_pfparameters()
         self.correlate_acivity_of_allcellsbytask()
         self.common_droppedcells_withTask1()
@@ -76,8 +79,8 @@ class GetData:
             self.calculate_reward_cell_parameters()
         self.save_analyseddata()
 
-    def create_data_dict(self):
-        data_dict = {keys: [] for keys in self.TaskDict.keys()}
+    def create_data_dict(self, TaskDict):
+        data_dict = {keys: [] for keys in TaskDict.keys()}
         return data_dict
 
     def get_data_folders(self):
@@ -89,8 +92,8 @@ class GetData:
              (f.endswith('.mat') and 'PlaceFields' in f and 'GoodBehavior' in f)]
 
     def find_sig_PFs_cellnum_bytask(self):
-        self.sig_PFs_cellnum = self.create_data_dict()
-        self.numPFS_incells = self.create_data_dict()
+        self.sig_PFs_cellnum = self.create_data_dict(self.new_taskDict)
+        self.numPFS_incells = self.create_data_dict(self.new_taskDict)
         for i in self.PlaceFieldData:
             ft = i.find('Task')
             taskname = i[ft:ft + i[ft:].find('_')]
@@ -103,25 +106,86 @@ class GetData:
             self.sig_PFs_cellnum[taskname] = np.where(tempx > 0)[0]
             self.numPFS_incells[taskname] = tempx[np.where(tempx > 0)[0]]
 
+    def revise_sig_PFs(self):
+        # Get_gaussianfit
+        x = np.arange(0, np.int(self.tracklength / self.trackbins))
+        y = self.gaussian(x, 1, 0.01, 5) + np.random.normal(0, 0.2, x.size)
+        best_vals, covar = curve_fit(self.gaussian, x, y, p0=[1, 0, 1])
+        gaussfit = self.gaussian(x, *best_vals)
+        beginning_cell_dict = self.create_data_dict(self.new_taskDict)
+        for i in self.PlaceFieldData:
+            ft = i.find('Task')
+            taskname = i[ft:ft + i[ft:].find('_')]
+            print(taskname)
+            x = scipy.io.loadmat(os.path.join(self.FolderName, 'Behavior', i))
+            beginning_cell = np.zeros_like(self.sig_PFs_cellnum[taskname])
+            count = 0
+            for n in np.arange(np.size(self.sig_PFs_cellnum[taskname])):
+                for i in np.arange(self.numPFS_incells[taskname][n]):
+                    pc_activity = np.nanmean(
+                        x['sig_PFs'][i][self.sig_PFs_cellnum[taskname][n]], 1)
+                    start_bins = x['PF_start_bins'][i][self.sig_PFs_cellnum[taskname][n]]
+                    end_bins = x['PF_end_bins'][i][self.sig_PFs_cellnum[taskname][n]]
+                    tailflag = self.check_for_beginning_transients(pc_activity, start_bins, end_bins, gaussfit)
+                    if tailflag:
+                        beginning_cell[n] += 1
+            beginning_cell_dict[taskname] = beginning_cell
+            plt.title(taskname)
+            plt.show()
+        self.update_PFs(beginning_cell_dict)
+        return beginning_cell_dict
+
+    def update_PFs(self, beginning_cells):
+        self.sig_PFs_cellnum_revised = self.create_data_dict(self.new_taskDict)
+        self.sig_PFs_beginning = self.create_data_dict(self.new_taskDict)
+        self.numPFs_incells_revised = self.create_data_dict(self.new_taskDict)
+        self.cellid_beg_multiplepfs = self.create_data_dict(self.new_taskDict)
+        for taskname in self.new_taskDict.keys():
+            for n in np.arange(np.size(self.sig_PFs_cellnum[taskname])):
+                if beginning_cells[taskname][n] > 0 and self.numPFS_incells[taskname][n] == 1:
+                    self.sig_PFs_beginning[taskname].append(self.sig_PFs_cellnum[taskname][n])
+                else:
+                    if beginning_cells[taskname][n] > 0 and self.numPFS_incells[taskname][n] > 1:
+                        self.cellid_beg_multiplepfs[taskname].append(self.sig_PFs_cellnum[taskname][n])
+                    self.sig_PFs_cellnum_revised[taskname].append(self.sig_PFs_cellnum[taskname][n])
+                    self.numPFs_incells_revised[taskname].append(self.numPFS_incells[taskname][n])
+
+    def check_for_beginning_transients(self, data, start_bins, end_bins, gaussfit, threshold=1):
+        if start_bins == 1 and np.argmax(data) <= threshold:
+            correlation_withgauss = self.check_if_tail(data, gaussfit)
+            if correlation_withgauss > 0.7:
+                plt.plot(data)
+                plt.plot(np.argmax(data), np.max(data), '*', markersize=10)
+                return True
+            else:
+                return False
+
+    def check_if_tail(self, data, gaussfit):
+        corr = np.corrcoef(data, gaussfit)[0, 1]
+        return corr
+
+    def gaussian(self, x, amp, cen, wid):
+        return amp * np.exp(-(x - cen) ** 2 / wid)
+
     def common_droppedcells_withTask1(self):
-        self.droppedcells = self.create_data_dict()
-        self.commoncells = self.create_data_dict()
+        self.droppedcells = self.create_data_dict(self.new_taskDict)
+        self.commoncells = self.create_data_dict(self.new_taskDict)
         for i in self.new_taskDict.keys():
             if self.controlflag:
                 if i not in 'Task1a':
                     self.droppedcells[i] = np.asarray(
-                        [l for l in self.sig_PFs_cellnum['Task1a'] if l not in self.sig_PFs_cellnum[i]])
+                        [l for l in self.sig_PFs_cellnum_revised['Task1a'] if l not in self.sig_PFs_cellnum_revised[i]])
                     self.commoncells[i] = list(
-                        set(self.sig_PFs_cellnum['Task1a']).intersection(self.sig_PFs_cellnum[i]))
+                        set(self.sig_PFs_cellnum_revised['Task1a']).intersection(self.sig_PFs_cellnum_revised[i]))
             else:
                 if i not in 'Task1':
                     self.droppedcells[i] = np.asarray(
-                        [l for l in self.sig_PFs_cellnum['Task1'] if l not in self.sig_PFs_cellnum[i]])
+                        [l for l in self.sig_PFs_cellnum_revised['Task1'] if l not in self.sig_PFs_cellnum_revised[i]])
                     self.commoncells[i] = list(
-                        set(self.sig_PFs_cellnum['Task1']).intersection(self.sig_PFs_cellnum[i]))
+                        set(self.sig_PFs_cellnum_revised['Task1']).intersection(self.sig_PFs_cellnum_revised[i]))
 
     def load_fluorescentdata(self):
-        self.Fc3data_dict = self.create_data_dict()
+        self.Fc3data_dict = self.create_data_dict(self.TaskDict)
         # Open calcium data and store in dicts per trial
         data = scipy.io.loadmat(os.path.join(self.FolderName, self.ImgFileName[0]))
         count = 0
@@ -132,7 +196,7 @@ class GetData:
             count += self.Task_Numframes[i]
 
     def get_lapframes_numcells(self):
-        self.good_lapframes = self.create_data_dict()
+        self.good_lapframes = self.create_data_dict(self.new_taskDict)
         for t in self.TaskDict.keys():
             self.good_lapframes[t] = [scipy.io.loadmat(os.path.join(self.FolderName, 'Behavior', p))['E'].T for p in
                                       self.PlaceFieldData if t in p and 'Task2a' not in p][0]
@@ -144,7 +208,7 @@ class GetData:
         print(f'Total number of cells: %d' % self.numcells)
 
     def load_v73_Data(self):
-        self.Fc3data_dict = self.create_data_dict()
+        self.Fc3data_dict = self.create_data_dict(self.TaskDict)
         f = h5py.File(os.path.join(self.FolderName, self.ImgFileName[0]), 'r')
         for k, v in f.items():
             print(k, np.shape(v))
@@ -161,13 +225,15 @@ class GetData:
             ft = i.find('Task')
             taskname = i[ft:ft + i[ft:].find('_')]
             x = scipy.io.loadmat(os.path.join(self.FolderName, 'Behavior', i))
-            pc_activity = np.zeros(
-                (np.int(np.sum(self.numPFS_incells[taskname])), np.int(self.tracklength / self.trackbins)))
-            cellcount = 0
-            for n in np.arange(np.size(self.sig_PFs_cellnum[taskname])):
-                for i in np.arange(self.numPFS_incells[taskname][n]):
-                    pc_activity[cellcount, :] = np.nanmean(x['sig_PFs_with_noise'][i][self.sig_PFs_cellnum[taskname][n]], 1)
-                    cellcount += 1
+            pc_activity = np.asarray([])
+            for n in np.arange(np.size(self.sig_PFs_cellnum_revised[taskname])):
+                if self.sig_PFs_cellnum_revised[taskname][n] in self.cellid_beg_multiplepfs[taskname]:
+                    beg = 1
+                else:
+                    beg = 0
+                for i in np.arange(beg, self.numPFs_incells_revised[taskname][n]):
+                    pc_temp = np.nanmean(x['sig_PFs_with_noise'][i][self.sig_PFs_cellnum_revised[taskname][n]], 1)
+                    pc_activity = np.vstack((pc_activity, pc_temp)) if pc_activity.size else pc_temp
             pcsortednum[taskname] = np.argsort(np.nanargmax(pc_activity, 1))
             pc_activity_dict[taskname] = pc_activity
             self.save_pcs(pcdict=pc_activity_dict, savename='sortedpcs_pertask')
@@ -183,9 +249,13 @@ class GetData:
             ft = t.find('Task')
             taskname = t[ft:ft + t[ft:].find('_')]
             x = scipy.io.loadmat(os.path.join(self.FolderName, 'Behavior', t))
-            for n in np.arange(np.size(self.sig_PFs_cellnum[taskname])):
-                for p1 in np.arange(self.numPFS_incells[taskname][n]):
-                    data = x['sig_PFs'][p1][self.sig_PFs_cellnum[taskname][n]]
+            for n in np.arange(np.size(self.sig_PFs_cellnum_revised[taskname])):
+                if self.sig_PFs_cellnum_revised[taskname][n] in self.cellid_beg_multiplepfs[taskname]:
+                    beg = 1
+                else:
+                    beg = 0
+                for p1 in np.arange(beg, self.numPFs_incells_revised[taskname][n]):
+                    data = x['sig_PFs'][p1][self.sig_PFs_cellnum_revised[taskname][n]]
                     COM = np.zeros(np.size(data, 1))
                     weighted_com_num = np.zeros(np.size(data, 1))
                     weighted_com_denom = np.zeros(np.size(data, 1))
@@ -250,15 +320,16 @@ class GetData:
                     firingratio, infield_f = self.calculate_inoutfield_firing(x, n, p1, taskname)
                     self.pfparams_df = self.pfparams_df.append({'Task': taskname,
                                                                 'CellNumber':
-                                                                    self.sig_PFs_cellnum[taskname][n],
+                                                                    self.sig_PFs_cellnum_revised[taskname][n],
                                                                 'PlaceCellNumber': p1 + 1,
-                                                                'NumPlacecells': self.numPFS_incells[taskname][n],
+                                                                'NumPlacecells': self.numPFs_incells_revised[taskname][
+                                                                    n],
                                                                 'COM': COM,
                                                                 'WeightedCOM': weighted_com,
                                                                 'Precision': precision,
                                                                 'Stability': np.nanmean(stability) * numlaps_withfiring,
                                                                 'Width': x['PF_width'][p1][
-                                                                    self.sig_PFs_cellnum[taskname][n]],
+                                                                    self.sig_PFs_cellnum_revised[taskname][n]],
                                                                 'FiringRatio': firingratio,
                                                                 'Firingintensity': infield_f},
                                                                ignore_index=True)
@@ -266,22 +337,24 @@ class GetData:
     def calculate_remapping_with_task(self, taskA):
         pc_activity_dict = {keys: [] for keys in self.new_taskDict.keys()}
         pcsortednum = {keys: [] for keys in self.new_taskDict.keys()}
-        cells_to_plot = list(self.sig_PFs_cellnum[taskA])
+        cells_to_plot = list(self.sig_PFs_cellnum_revised[taskA])
         for i in self.PlaceFieldData:
             ft = i.find('Task')
             taskname = i[ft:ft + i[ft:].find('_')]
             x = scipy.io.loadmat(os.path.join(self.FolderName, 'Behavior', i))
-            pc_activity = np.zeros(
-                (np.int(np.sum(self.numPFS_incells[taskA])), np.int(self.tracklength / self.trackbins)))
-            cellcount = 0
+            pc_activity = np.asarray([])
             for n, c in enumerate(cells_to_plot):
-                for l in np.arange(self.numPFS_incells[taskA][n]):  # Iterate over how many ever place cells are there
+                if c in self.cellid_beg_multiplepfs[taskA]:
+                    beg = 1
+                else:
+                    beg = 0
+                for l in np.arange(beg, self.numPFs_incells_revised[taskA][n]):
                     # Separate lick and no lick in task2
                     if taskname == self.noreward_task:
-                        pc_activity[cellcount, :] = np.nanmean((x['Allbinned_F'][0, c][:, :self.lickstoplap]), 1)
+                        pc_temp = np.nanmean((x['Allbinned_F'][0, c][:, :self.lickstoplap]), 1)
                     else:
-                        pc_activity[cellcount, :] = np.nanmean((x['Allbinned_F'][0, c]), 1)
-                    cellcount += 1
+                        pc_temp = np.nanmean((x['Allbinned_F'][0, c]), 1)
+                    pc_activity = np.vstack((pc_activity, pc_temp)) if pc_activity.size else pc_temp
             pc_activity_dict[taskname] = pc_activity
 
         # Sort by taskA
@@ -293,9 +366,10 @@ class GetData:
 
     def calculate_inoutfield_firing(self, data, pcnum, pfnum, taskname):
 
-        pc_activity = np.nanmean(data['sig_PFs_with_noise'][pfnum][self.sig_PFs_cellnum[taskname][pcnum]], 1)
-        pc_start = np.int(data['PF_start_bins'][pfnum][self.sig_PFs_cellnum[taskname][pcnum]]) - 1  # Pythonic(-1)
-        pc_end = np.int(data['PF_end_bins'][pfnum][self.sig_PFs_cellnum[taskname][pcnum]])
+        pc_activity = np.nanmean(data['sig_PFs_with_noise'][pfnum][self.sig_PFs_cellnum_revised[taskname][pcnum]], 1)
+        pc_start = np.int(
+            data['PF_start_bins'][pfnum][self.sig_PFs_cellnum_revised[taskname][pcnum]]) - 1  # Pythonic(-1)
+        pc_end = np.int(data['PF_end_bins'][pfnum][self.sig_PFs_cellnum_revised[taskname][pcnum]])
         # print(pcnum, pfnum, pc_start, pc_end, taskname, self.sig_PFs_cellnum[taskname][pcnum])
         infieldbins = np.zeros(pc_activity.shape, dtype=np.bool_)
         infieldbins[pc_start:pc_end] = True
@@ -490,22 +564,34 @@ class GetData:
 
         # Save pfnum and correlation datasets
         if self.controlflag:
-            np.savez(os.path.join(self.SaveDataframeFolder, f'%s_placecell_data.npz' % self.animalname),
+            np.savez(os.path.join(self.SaveFolder, f'%s_placecell_data.npz' % self.animalname),
                      sig_PFs_cellnum=self.sig_PFs_cellnum, numPFs_incells=self.numPFS_incells,
+                     sig_PFs_cellnum_revised=self.sig_PFs_cellnum_revised,
+                     numPFs_incells_revised=self.numPFs_incells_revised,
+                     sig_PFs_beginning=self.sig_PFs_beginning,
+                     cellid_beg_multiplepfs=self.cellid_beg_multiplepfs,
                      dropped_cells=self.droppedcells, common_cells=self.commoncells,
                      correlation_withTask1=self.correlation_per_task, numcells=self.numcells,
                      animalname=self.animalname, Fc3data=self.Fc3data_dict, framerate=self.framerate)
         elif not self.controlflag and self.rewardflag:
-            np.savez(os.path.join(self.SaveDataframeFolder, f'%s_reward_data.npz' % self.animalname),
+            np.savez(os.path.join(self.SaveFolder, f'%s_reward_data.npz' % self.animalname),
                      sig_PFs_cellnum=self.sig_PFs_cellnum, numPFs_incells=self.numPFS_incells,
                      dropped_cells=self.droppedcells, common_cells=self.commoncells,
+                     sig_PFs_cellnum_revised=self.sig_PFs_cellnum_revised,
+                     numPFs_incells_revised=self.numPFs_incells_revised,
+                     sig_PFs_beginning=self.sig_PFs_beginning,
+                     cellid_beg_multiplepfs=self.cellid_beg_multiplepfs,
                      correlation_withTask1=self.correlation_per_task, numcells=self.numcells,
                      animalname=self.animalname, Fc3data=self.Fc3data_dict, rewarddata_percell=self.reward_imaging_data,
                      rewardzone_Fc3=self.reward_Fc3_pertask, rewardcorrelation=self.reward_correlation_data,
                      nsecondsroundrew=self.nsecondsroundrew, framerate=self.framerate)
         else:
-            np.savez(os.path.join(self.SaveDataframeFolder, f'%s_placecell_data.npz' % self.animalname),
+            np.savez(os.path.join(self.SaveFolder, f'%s_placecell_data.npz' % self.animalname),
                      sig_PFs_cellnum=self.sig_PFs_cellnum, numPFs_incells=self.numPFS_incells,
+                     sig_PFs_cellnum_revised=self.sig_PFs_cellnum_revised,
+                     numPFs_incells_revised=self.numPFs_incells_revised,
+                     sig_PFs_beginning=self.sig_PFs_beginning,
+                     cellid_beg_multiplepfs=self.cellid_beg_multiplepfs,
                      dropped_cells=self.droppedcells, common_cells=self.commoncells,
                      correlation_withTask1=self.correlation_per_task, numcells=self.numcells,
                      animalname=self.animalname, Fc3data=self.Fc3data_dict, framerate=self.framerate)
@@ -515,15 +601,17 @@ class GetData:
 
 
 class PlottingFunctions(GetData):
-    def plot_placecells_with_track_pertask(self, pc_activity, sorted_pcs, figsize=(10, 4)):
+    def plot_placecells_with_track_pertask(self, pc_activity, sorted_pcs, figsize=(10, 4), **kwargs):
         taskaxis = {'Task1': 0, 'Task1a': 0, 'Task1b': 1, 'Task2': 1, 'Task2b': 2, 'Task3': 3, 'Task4': 4}
         fs, ax1 = plt.subplots(1, len(self.new_taskDict), figsize=figsize, dpi=100, sharex='all', sharey='all')
         for taskname in self.new_taskDict.keys():
             task_data = pc_activity[taskname][sorted_pcs[taskname], :]
-            normalise_data = (task_data - np.nanmin(task_data.flatten())) / (
-                    np.nanmax(task_data.flatten()) - np.nanmin(task_data.flatten()))
+            if 'normalise_basetask' in kwargs.keys():
+                normalise_data = task_data / np.nanmax(pc_activity[kwargs['normalise_basetask']], 1)[:, np.newaxis]
+            else:
+                normalise_data = task_data / np.nanmax(task_data, 1)[:, np.newaxis]
             ax1[taskaxis[taskname]].imshow(normalise_data,
-                                           aspect='auto', cmap='jet', interpolation='nearest', vmin=0, vmax=0.5)
+                                           aspect='auto', cmap='jet', interpolation='nearest', vmin=0, vmax=1)
 
             ax1[taskaxis[taskname]].set_title(self.new_taskDict[taskname])
             ax1[taskaxis[taskname]].set_xticks([0, 20, 39])
@@ -543,7 +631,7 @@ class PlottingFunctions(GetData):
         for i in range(0, self.numcells):
             PF_sort['Cellnum'].append(i)
             for t in self.new_taskDict.keys():
-                if i in self.sig_PFs_cellnum[t]:
+                if i in self.sig_PFs_cellnum_revised[t]:
                     PF_sort[t].append(1)
                 else:
                     PF_sort[t].append(0)
@@ -723,7 +811,7 @@ class PlottingFunctions(GetData):
 
         count_axis = 0
         if placecell_flag:
-            cells_to_plot = self.sig_PFs_cellnum[taskA]
+            cells_to_plot = self.sig_PFs_cellnum_revised[taskA]
             celldata = data_to_plot[taskA][cells_to_plot, :]
             sort_cells = np.argsort(np.nanmean(celldata, 1))[::-1]
         else:

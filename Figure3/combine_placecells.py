@@ -75,7 +75,7 @@ class GetData(object):
         self.plpc.plot_placecells_pertask(fig, axis, taskstoplot, pc_activity_dict, pcsortednum,
                                           normalise_data=normalise_data)
 
-        return corrcoef_dict
+        return corrcoef_dict, pc_activity_dict, pcsortednum
 
     def combine_control_placecells(self, fig, axis, ControlFolder, taskstoplot, tasktocompare='Task1a', controlflag=0):
         pc_activity_dict = {keys: np.asarray([]) for keys in taskstoplot}
@@ -102,7 +102,7 @@ class GetData(object):
 
         # Correlate place cells
         corrcoef_dict = self.find_correlation(pc_activity_dict, taskstoplot, tasktocompare)
-        return corrcoef_dict
+        return corrcoef_dict, pc_activity_dict, pcsortednum
 
     def find_correlation(self, pc_dict, taskstoplot, tasktocompare):
         # Correlate place cells
@@ -130,7 +130,7 @@ class GetData(object):
                 for t in taskstoplot:
                     perccells_peranimal[t].append(
                         (np.sum(pfparams['numPFs_incells'].item()[t]) / pfparams['numcells']) * 100)
-                    print(t, np.sum(pfparams['numPFs_incells'].item()[t]), np.shape(pf_remapping[t]))
+                    # print(t, np.sum(pfparams['numPFs_incells'].item()[t]), np.shape(pf_remapping[t]))
                     pc_activity_dict[t] = np.vstack((pc_activity_dict[t], pf_remapping[t])) if pc_activity_dict[
                         t].size else pf_remapping[t]
 
@@ -144,7 +144,8 @@ class GetData(object):
         return perccells_peranimal
 
     def get_com_allanimal(self, fig, axis, taskA, taskB, vmax=0):
-        csvfiles_pfs = [f for f in os.listdir(self.CombinedDataFolder) if f.endswith('.csv') and 'reward' not in f]
+        csvfiles_pfs = [f for f in os.listdir(self.CombinedDataFolder) if
+                        f.endswith('.csv') and 'reward' not in f and 'common' not in f]
         com_all_animal = np.array([])
         count = 0
         for n, f in enumerate(csvfiles_pfs):
@@ -168,6 +169,63 @@ class GetData(object):
                 count += 1
         self.plpc.plot_com_scatter_heatmap(fig, axis, com_all_animal, taskA, taskB, self.tracklength, vmax=vmax)
         return np.abs(np.subtract(com_all_animal[0, :], com_all_animal[1, :]))
+
+
+class TrackParams(object):
+    def __init__(self, pc_activity_dict):
+        self.pc_activity_dict = pc_activity_dict
+        self.tracklength = 200
+        self.trackbins = 5
+
+    def trackcorrelation(self, basetask='Task1'):
+        correlation = {k: [] for k in self.pc_activity_dict.keys() if k not in basetask}
+        pcsorted = np.argsort(np.nanargmax(self.pc_activity_dict[basetask], 1))
+        for cell in np.arange(np.size(self.pc_activity_dict[basetask], 0)):
+            x = self.pc_activity_dict[basetask][cell, :]
+            for t in self.pc_activity_dict.keys():
+                if t != basetask:
+                    y = self.pc_activity_dict[t][cell, :]
+                    correlation[t].append(np.corrcoef(x, y)[0, 1])
+
+        for keys, values in correlation.items():
+            correlation[keys] = np.asarray(values)[pcsorted]
+        return correlation
+
+    def get_track_com_percell(self, ax, data, basetask, taskstoplot, pvalueflag=0):
+        com = np.nanargmax(self.pc_activity_dict[basetask], 1)
+        bins = np.linspace(1, self.tracklength / self.trackbins, 14)
+        print(bins)
+        ind = np.digitize(com, bins)
+
+        for n, t in enumerate(taskstoplot):
+            y = data[t]
+            mean_binned = np.zeros_like(bins)
+            error = np.zeros_like(bins)
+            for b in np.arange(0, np.size(bins)):
+                m, sem = np.nanmean(y[ind == b]), scipy.stats.sem(y[ind == b], nan_policy='omit')
+                # print(np.size(y[ind == b]), b, t)
+                mean_binned[b], error[b] = m, sem
+            width = np.diff(bins)
+            center = (bins[:-1] + bins[1:]) / 2
+
+            ax.plot(bins[1:] * self.trackbins, mean_binned[1:], zorder=2, label=t)
+            ax.fill_between(bins[1:] * self.trackbins, mean_binned[1:] - error[1:], mean_binned[1:] + error[1:],
+                            zorder=2, alpha=0.5)
+            # ax.errorbar(bins[1:] * self.trackbins, mean_binned[1:], yerr=error[1:], label=t, zorder=1)
+            # ax.plot(bins[1:] * self.trackbins, mean_binned[1:], 'ko', zorder=2)
+        ax.set_xlabel('Track Length (cm)')
+        ax.set_ylabel('Correlation')
+
+        pf.set_axes_style(ax, numticks=4)
+
+        ## For p values
+        if pvalueflag:
+            for b in np.arange(1, np.size(bins)):
+                x = data[taskstoplot[0]]
+                y = data[taskstoplot[1]]
+                t, p = scipy.stats.mannwhitneyu(x[ind == b], y[ind == b])
+                # if p < 0.05:
+                #     ax.plot(bins[b] * self.trackbins, 0.8, 'k*', markersize=5)
 
 
 class PlotPCs(object):
@@ -246,6 +304,26 @@ class PlotPCs(object):
         cb = fig.colorbar(img, cax=axins, pad=0.2, ticks=[0, 1])
         cb.set_label('Delta f/f')
         cb.ax.tick_params(size=0)
+
+    @staticmethod
+    def heirarchical_clustering(pc_activity, sorted_pcs, taskstoplot, basetask='Task1'):
+        data = OrderedDict()
+        for t in taskstoplot:
+            data[t] = pc_activity[t][sorted_pcs[basetask], :]
+
+        numcells = np.size(data[basetask], 0)
+        corr_dict = {k: [] for k in taskstoplot}
+        for t in taskstoplot:
+            c = np.zeros((numcells, numcells))
+            for i in np.arange(numcells):
+                for j in np.arange(numcells):
+                    x = data[basetask][i, :]
+                    y = data[t][j, :]
+                    c[i, j] = np.corrcoef(x, y)[0, 1]
+            c = np.nan_to_num(c)
+            corr_dict[t] = c
+
+        return corr_dict
 
     @staticmethod
     def scatter_of_common_center_of_mass(self, taskA, taskB, bins=10):

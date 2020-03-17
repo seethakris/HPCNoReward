@@ -14,7 +14,8 @@ class LickStop(object):
     def __init__(self, ParentDataFolder, norewardtask='Task2'):
         self.ParentDataFolder = ParentDataFolder
         self.norewardtask = norewardtask
-        self.animalfiles = [f for f in os.listdir(self.ParentDataFolder) if 'Bayes' not in f and 'Lick' not in f]
+        self.animalfiles = [f for f in os.listdir(self.ParentDataFolder) if
+                            f not in ['LickData', 'BayesResults_All', 'SaveAnalysed', 'PlaceCellResults_All']]
         self.lickstopdf = pd.DataFrame(index=[self.animalfiles],
                                        columns=['First0', 'First2', 'First4', 'First6'])
         self.lickstopdf_corrected = pd.DataFrame(index=[self.animalfiles],
@@ -23,11 +24,13 @@ class LickStop(object):
         self.get_mean_std_licks_incontrol()
         self.save_lick_dataframes()
 
+
     def get_behavior_data(self):
         for i in self.animalfiles:
             behaviorfiles = np.load(os.path.join(self.ParentDataFolder, i, 'SaveAnalysed', 'behavior_data.npz'),
                                     allow_pickle=True)
             self.get_different_lickstops(i, behaviorfiles)
+
 
     def get_different_lickstops(self, animalname, behaviorfiles):
         # Get different lick stops based on different criteria
@@ -40,6 +43,7 @@ class LickStop(object):
         self.get_consecutivelickstop(animalname, 2, licks_within_rewardzone, lick_stop, numlaps)
         self.get_consecutivelickstop(animalname, 4, licks_within_rewardzone, lick_stop, numlaps)
         self.get_consecutivelickstop(animalname, 6, licks_within_rewardzone, lick_stop, numlaps)
+
 
     def get_consecutivelickstop(self, animalname, consecutivenolick, licks_within_reward, lick_stop, numlaps,
                                 correct_flag=0):
@@ -57,6 +61,7 @@ class LickStop(object):
             else:
                 self.lickstopdf.loc[animalname, f'First%d' % consecutivenolick] = lick_stop
 
+
     def get_mean_std_licks_incontrol(self):
         licks_incontrol = []
         for i in self.animalfiles:
@@ -66,6 +71,7 @@ class LickStop(object):
         error_margin = np.floor(np.mean(licks_incontrol) + np.std(licks_incontrol))
         print('Mean %0.2f + STD %0.2f laps %0.2f' % (np.mean(licks_incontrol), np.std(licks_incontrol), error_margin))
         self.get_different_licks_corrected(error_margin)
+
 
     def get_different_licks_corrected(self, error_margin):
         for i in self.animalfiles:
@@ -83,6 +89,7 @@ class LickStop(object):
             self.get_consecutivelickstop(i, 2, licks_noreward_new, lick_stop, numlaps, correct_flag=1)
             self.get_consecutivelickstop(i, 4, licks_noreward_new, lick_stop, numlaps, correct_flag=1)
             self.get_consecutivelickstop(i, 6, licks_noreward_new, lick_stop, numlaps, correct_flag=1)
+
 
     def save_lick_dataframes(self):
         SaveFolder = os.path.join(self.ParentDataFolder, 'LickData')
