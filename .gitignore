@@ -18,6 +18,7 @@ Thumbs.db
 
 #.idea folders
 .idea/
+.__pycache__/
 
 #Folders that are demo
 ImagingScripts/PilotCFCImaging_DG4.ipynb
